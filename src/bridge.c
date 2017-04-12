@@ -1286,7 +1286,7 @@ void reset_time_stamp()
 	
 }
 
-int main(){
+int ble_test(){
 	
 	memset(&sa, 0, sizeof(sa));
 	sa.sa_flags = SA_NOCLDSTOP;
