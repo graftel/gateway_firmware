@@ -6,11 +6,12 @@ BDIR=build
 ODIR=obj
 LDIR=lib
 SDIR=src
-LIBS=-lconfig -lbluetooth -lsqlite3 -lpthread -lmhash -luuid
+#LIBS=-lconfig -lbluetooth -lsqlite3 -lpthread -lmhash -luuid
+LIBS=-lm
 
 APP_NAME=bridge
 
-SOURCES=bridge.c sqlfunc.c dynamoDBfunc.c
+SOURCES=main.c i2c_tsys01.c
 _SOURCES=$(addprefix $(SDIR)/,$(SOURCES))
 
 _DEPS=$(_SOURCES:.c=.h)
