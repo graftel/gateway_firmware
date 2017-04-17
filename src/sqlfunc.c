@@ -1,7 +1,9 @@
 // Functions to Save data to local SQLite DB
-#include <bridge.h>
 #include <sqlfunc.h>
 #include <sqlite3.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
 
 char sql_query[500];
 char buffer[50];
@@ -26,14 +28,14 @@ int callback_table_exist(void *NotUsed, int argc, char **argv,
     return 0;
 }
 
-void *write_sqlite_hx_data_wrapper(void *args)
+void *write_sqlite_sensor_data_wrapper(void *args)
 {
-	thread_arg *arguments = args;
+	bulk_data *arguments = args;
 	
-	return (void *)write_sqlite_hx_data(arguments->user_data,arguments->size_hx_data);
+	return (void *)write_sqlite_sensor_data(arguments->data,arguments->size_data);
 }
 
-int write_sqlite_hx_data(hx_data *user_data, int size_hx_data)
+int write_sqlite_sensor_data(sensor_data *data, int size_data)
 {
    sqlite3 *db;
    char *err_msg = 0;
@@ -76,11 +78,15 @@ int write_sqlite_hx_data(hx_data *user_data, int size_hx_data)
 					   ,time_stamp  	integer(4) not null default (strftime('%s','now'))\
 					   ,data_time_stamp integer(4) \
 					   ,data 			real  	   not null\
+					   ,data_tag 		text\
 					   ,data_unit 		text\
 					   ,data_type 		text\
-					   ,data_address 	text\
+					   ,device_address 	text\
 					   ,serial_num 		text\
-					   ,ble_address 	text);");
+					   ,bluetooth_address 	text\
+					   ,protocol		text\
+					   ,note			text\
+					   ,note2			text);");
 					   
 		rc = sqlite3_exec(db, sql_query, 0, 0, &err_msg);
 		
@@ -97,41 +103,47 @@ int write_sqlite_hx_data(hx_data *user_data, int size_hx_data)
 		}
    }
    
-   for (i = 0; i < size_hx_data; i++)
+   for (i = 0; i < size_data; i++)
    {
 	   memset(sql_query,0,sizeof(sql_query));
 	   strcpy (sql_query, "INSERT INTO ");
 	   strcat (sql_query, HX_MAIN_TABLE_NAME);
-	   strcat (sql_query, " (data_time_stamp,data,data_unit,data_type,data_address,serial_num,ble_address) VALUES("); 
+	   strcat (sql_query, " (data_time_stamp,data,data_tag,data_unit,data_type,device_address,serial_num,bluetooth_address,protocol,note) VALUES("); 
 	   
 	   // Time stamp
 	   memset(buffer,0,sizeof(buffer));
-	   sprintf(buffer,"%d",(long)user_data[i].time_stamp);
+	   sprintf(buffer,"%d",(long)data[i].time_stamp);
 	   strcat (sql_query, buffer);
 	   strcat (sql_query, ",");
 	   // Data
 	   memset(buffer,0,sizeof(buffer));
-	   sprintf(buffer,"%.15f",user_data[i].data);
+	   sprintf(buffer,"%.15f",data[i].data);
 	   strcat (sql_query, buffer);
 	   strcat (sql_query, ",'");
+	   // Data tag
+	   strcat (sql_query, data[i].data_tag);
+	   strcat (sql_query, "','");
 	   // Data unit
-	   strcat (sql_query, user_data[i].data_unit);
+	   strcat (sql_query, data[i].data_unit);
 	   strcat (sql_query, "','");
 	   // Data type
-	   strcat (sql_query, user_data[i].data_type);
+	   strcat (sql_query, data[i].data_type);
 	   strcat (sql_query, "','");
-	   // Data address
-	   memset(buffer,0,sizeof(buffer));
-	   sprintf(buffer,"%02X",user_data[i].data_address);
-	   strcat (sql_query, buffer);
+	   // Dev address
+	   strcat (sql_query, data[i].dev_address);
 	   strcat (sql_query, "','");
 	   // serial_num
-	   strcat (sql_query, user_data[i].serial_num);
+	   strcat (sql_query, data[i].serial_num);
 	   strcat (sql_query, "','");
 	   // ble_address
-	   strcat (sql_query, user_data[i].ble_address);
-	   strcat (sql_query, "');");
+	   strcat (sql_query, data[i].ble_address);
+	   strcat (sql_query, "','");
 	   
+	   strcat (sql_query, data[i].protocol);
+	   strcat (sql_query, "','");
+	   
+	   strcat (sql_query, data[i].note);
+	   strcat (sql_query, "');");
 	 //  printf("insert query:%s\n",sql_query);
 	   
 	   rc = sqlite3_exec(db, sql_query, 0, 0, &err_msg);
@@ -149,7 +161,7 @@ int write_sqlite_hx_data(hx_data *user_data, int size_hx_data)
 	
 	printf("*********write to SQL finish************\n");
 	
-	free(user_data);
+//	free(data);
 	
    sqlite3_close(db);
    

@@ -7,11 +7,11 @@ ODIR=obj
 LDIR=lib
 SDIR=src
 #LIBS=-lconfig -lbluetooth -lsqlite3 -lpthread -lmhash -luuid
-LIBS=-lm
+LIBS=-lm -lpthread -lsqlite3
 
 APP_NAME=bridge
 
-SOURCES=main.c i2c_tsys01.c
+SOURCES=main.c i2c_tsys01.c sqlfunc.c
 _SOURCES=$(addprefix $(SDIR)/,$(SOURCES))
 
 _DEPS=$(_SOURCES:.c=.h)

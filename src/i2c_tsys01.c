@@ -1,7 +1,6 @@
 // i2c interface to read tsys01 probe
 #include <i2c_tsys01.h>
 #include <stdbool.h>
-#include <stdint.h>
 #include <string.h>
 #include <math.h>
 #include <stdio.h>
@@ -13,7 +12,7 @@
 #include <fcntl.h>
 
 
-#define TSYS01Address 0x66  //address left shifted by arduino as required to match datasheet
+//#define TSYS01Address 0x66  //address left shifted by arduino as required to match datasheet
 #define TSYS01Reset 0x1E //initiates reset
 #define TSYS01StartReg 0x48 //commands sensor to begin measurement / output calculation
 #define TSYS01TempReg 0x00 //requests most recent output from measurement
@@ -29,7 +28,6 @@ typedef enum KPoly_E //structure to hold calibration values from temperature sen
 KPoly_T;
 long tempReading = 0;
 float finalTempC = 0.0000;
-uint16_t coefficent[5];
 uint8_t MSB;//hol
 uint8_t OSB;
 uint8_t LSB;
@@ -38,42 +36,39 @@ float tmp_value = 0.0;
 float temp_data[100];
 char strTmp[50];
 int status;
-int file;
-int fd;
+
 uint8_t buf[3] = {0x00};
 
-void TSYS01INIT()
-{
-
-  const char *devName = "/dev/i2c-1";
+const char *devName = "/dev/i2c-1";
+  
+int TSYS01_init(TSYS01_Sensor *sensor, uint8_t addr)
+{ 
+  int fd;
   
   if ((fd = open (devName, O_RDWR)) < 0)
   {
 	  perror(devName);
-	  return;
+	  return -1;
   }
 
-   if (ioctl(fd, I2C_SLAVE, TSYS01Address) < 0)
+   if (ioctl(fd, I2C_SLAVE, addr) < 0)
    {
        perror("Failed to acquire bus access and/or talk to slave");
-       return;
+       return -1;
    }
 
+   sensor->i2c_addr = addr;
   
     buf[0] = TSYS01Reset;
 
 	if (write(fd, buf, 1) != 1)
 	{
 		perror("Failed to write to the i2c bus");
-		return;
+		return -1;
 	}
 
   usleep(10000);
   
-}
-
-void GetCoefs()  //gathers calibration coefficients to array
-{
   uint8_t tx_data = 0x00;
 
   uint8_t n = 0;
@@ -87,13 +82,13 @@ void GetCoefs()  //gathers calibration coefficients to array
 	if (write(fd, buf, 1) != 1)
     {
         perror("Failed to write to the i2c bus");
-        return;
+        return -1;
     }
 	
 	 if (read(fd,buf,2) != 2)
      {
          perror("Failed to read from the i2c bus");
-         return;
+         return -1;
      }
 	
 
@@ -105,13 +100,20 @@ void GetCoefs()  //gathers calibration coefficients to array
     
 	uint16_t x = (uint16_t)Ai << 8;
     x+=Bi;
-    coefficent[n] =x;
+    sensor->coefficent[n] =x;
 	
 	
   }
+  
+  close(fd);
+  
+  sensor->init_status = 1;
+  
+  return 0;
+  
 }
 
-float scaleTemp_C(uint16_t rawAdc)
+float scaleTemp_C(uint16_t rawAdc, uint16_t *coefficent)
 {
 
   float retVal =
@@ -125,8 +127,29 @@ float scaleTemp_C(uint16_t rawAdc)
 
 }
 
-void TSYS01GetTemp()
- {
+int TSYS01_GetTemp(TSYS01_Sensor *sensor)
+{
+   int fd;
+   
+   if (sensor->init_status != 1)
+   {
+	   perror("sensor not initialized");
+	   // not initalized
+	   return -1;
+   }
+	
+  if ((fd = open (devName, O_RDWR)) < 0)
+  {
+	  perror(devName);
+	  return -1;
+  }
+
+   if (ioctl(fd, I2C_SLAVE, sensor->i2c_addr) < 0)
+   {
+       perror("Failed to acquire bus access and/or talk to slave");
+       return -1;
+   }
+	
   Temp = 999.99;
   uint8_t tx_data = TSYS01StartReg;
   uint8_t rx_data[3];
@@ -134,8 +157,8 @@ void TSYS01GetTemp()
   buf[0] = tx_data;
   if (write(fd, buf, 1) != 1)
   {
-	    perror("Failed to write to the i2c bus");
-        return;
+	    perror("Failed to write to the i2c bus 1");
+        return -1;
   }
 	
   usleep(10000);
@@ -145,29 +168,26 @@ void TSYS01GetTemp()
   buf[0] = tx_data;
   if (write(fd, buf, 1) != 1)
   {
-	    perror("Failed to write to the i2c bus");
-        return;
+	    perror("Failed to write to the i2c bus 2");
+        return -1;
   }
   
   buf[0] = tx_data;
   if (read(fd, buf, 3) != 3)
   {
-	    perror("Failed to write to the i2c bus");
-        return;
+	    perror("Failed to write to the i2c bus 3");
+        return -1;
   }
 
   MSB = buf[0];
   OSB = buf[1];
   LSB = buf[2];
   
-  Temp = scaleTemp_C((((unsigned long)MSB << 8) | ((unsigned long)OSB))); //convert and cast to Temp with scaling equation
-	
-  printf("Temp=%f\n",Temp);
-}
+  
+  
+  sensor->temp_reading = scaleTemp_C((((unsigned long)MSB << 8) | ((unsigned long)OSB)), sensor->coefficent); //convert and cast to Temp with scaling equation
 
-void GetReading()
-{
-	TSYS01INIT();
-	GetCoefs();
-	TSYS01GetTemp();
+  close(fd);
+  
+  return 0;
 }
