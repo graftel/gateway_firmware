@@ -47,7 +47,7 @@ int main()
 		strcpy(s_data1.protocol,"I2C");
 		strcpy(s_data1.note,"Special Note");
 		
-		bulk_data sensor_bulk_data;
+		bulk_sensor_data sensor_bulk_data;
 		sensor_bulk_data.data = &s_data1;
 		sensor_bulk_data.size_data = 1;
 		
@@ -55,6 +55,8 @@ int main()
 		{
 			fprintf(stderr,"Thread creation failed: %d\n", rc1);
 		}
+		
+		printf("rc1=%d\n",rc1);
 		
 		if (rc1 == 0)
 		{

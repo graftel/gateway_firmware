@@ -30,7 +30,7 @@ int callback_table_exist(void *NotUsed, int argc, char **argv,
 
 void *write_sqlite_sensor_data_wrapper(void *args)
 {
-	bulk_data *arguments = args;
+	bulk_sensor_data *arguments = args;
 	
 	return (void *)write_sqlite_sensor_data(arguments->data,arguments->size_data);
 }

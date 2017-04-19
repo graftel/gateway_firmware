@@ -21,7 +21,7 @@ typedef struct
 typedef struct{
   sensor_data *data;  
   int size_data;
-} bulk_data;
+} bulk_sensor_data;
 
 
 
