@@ -128,7 +128,7 @@
 
 #define CONFIG_FILE_NAME  "BLE_CONFIG.cfg"
 
-typedef struct 
+typedef struct
 {
 	char addr[18];
 	char serial_num[10];
@@ -140,7 +140,7 @@ typedef struct
 	int status;
 } simblee_control_module;
 
-typedef struct 
+typedef struct
 {
   uint8_t  length;
   uint8_t  manu_code;
@@ -167,9 +167,9 @@ enum read_state_def{
 	SET_SLEEP
 };
 
-typedef struct 
+typedef struct
 {
-   time_t time_stamp;  
+   time_t time_stamp;
    double data;
    uint8_t data_address;
    char data_unit[20];
@@ -179,7 +179,7 @@ typedef struct
 } hx_data;
 
 typedef struct{
-  hx_data *user_data;  
+  hx_data *user_data;
   int size_hx_data;
 } thread_arg;
 
