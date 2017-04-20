@@ -11,7 +11,7 @@ LIBS=-lm -lpthread -lsqlite3
 
 APP_NAME=bridge
 
-SOURCES=main.c i2c_tsys01.c sqlfunc.c
+SOURCES=main.c i2c_tsys01.c sqlfunc.c daq.c
 _SOURCES=$(addprefix $(SDIR)/,$(SOURCES))
 
 _DEPS=$(_SOURCES:.c=.h)
