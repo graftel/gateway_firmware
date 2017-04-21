@@ -17,6 +17,11 @@ typedef struct
    char note[50];
 } sensor_data;
 
+typedef struct{
+  sensor_data *data;
+  int size_data;
+} bulk_sensor_data;
+
 typedef struct
 {
    char dev_data_type[10];
@@ -24,13 +29,11 @@ typedef struct
    char dev_serial_num[20];
    char dev_ble_address[18];
    char dev_protocol[10];
+   char dev_cal_info[50];
    char dev_note[50];
 } hx_sensor;
 
-typedef struct{
-  sensor_data *data;
-  int size_data;
-} bulk_sensor_data;
+
 
 
 

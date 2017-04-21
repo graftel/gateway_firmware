@@ -48,12 +48,14 @@ int TSYS01_init(TSYS01_Sensor *sensor, uint8_t addr)
   if ((fd = open (devName, O_RDWR)) < 0)
   {
 	  perror(devName);
+	  close(fd);
 	  return -1;
   }
 
    if (ioctl(fd, I2C_SLAVE, addr) < 0)
    {
        perror("Failed to acquire bus access and/or talk to slave");
+	   close(fd);
        return -1;
    }
 
@@ -64,6 +66,7 @@ int TSYS01_init(TSYS01_Sensor *sensor, uint8_t addr)
 	if (write(fd, buf, 1) != 1)
 	{
 		perror("Failed to write to the i2c bus");
+		close(fd);
 		return -1;
 	}
 
@@ -82,12 +85,14 @@ int TSYS01_init(TSYS01_Sensor *sensor, uint8_t addr)
 	if (write(fd, buf, 1) != 1)
     {
         perror("Failed to write to the i2c bus");
+		close(fd);
         return -1;
     }
 	
 	 if (read(fd,buf,2) != 2)
      {
          perror("Failed to read from the i2c bus");
+		 close(fd);
          return -1;
      }
 	
@@ -125,6 +130,104 @@ float scaleTemp_C(uint16_t rawAdc, uint16_t *coefficent)
 
   return retVal;
 
+}
+
+
+int TSYS01_GetTemp_WithCal(char *addr, char *calInfo, float *temp1)
+{
+	int iAddr;
+	uint8_t uAddr;
+	if (addr == NULL)
+	{
+		perror("Address error");
+		return 0;
+	}
+	
+	sscanf(addr, "0x%02x", &iAddr);
+	
+	uAddr = (uint8_t)iAddr;
+	
+	// printf("addr = 0x%02x\n",uAddr);
+	
+	if (uAddr > 0x80)
+	{
+		perror("Address wrong");
+		return 0;
+	}
+	
+	uint16_t coef[5];
+	char * pEnd;
+    coef[0] = strtol(calInfo,&pEnd,16);
+    coef[1] = strtol(pEnd,&pEnd,16);
+	coef[2] = strtol(pEnd,&pEnd,16);
+    coef[3] = strtol(pEnd,&pEnd,16);
+	coef[4] = strtol(pEnd,NULL,16);
+	
+	// printf("coef[0]=0x%04x\n",coef[0]);
+	// printf("coef[1]=0x%04x\n",coef[1]);
+	// printf("coef[2]=0x%04x\n",coef[2]);
+	// printf("coef[3]=0x%04x\n",coef[3]);
+	// printf("coef[4]=0x%04x\n",coef[4]);
+	int fd;
+	
+  if ((fd = open (devName, O_RDWR)) < 0)
+  {
+	  perror(devName);
+	  return -1;
+  }
+
+   if (ioctl(fd, I2C_SLAVE, uAddr) < 0)
+   {
+       perror("Failed to acquire bus access and/or talk to slave");
+       return -1;
+   }
+	
+  float Temp1 = 999.99;
+  uint8_t tx_data = TSYS01StartReg;
+  uint8_t rx_data[3];
+
+  buf[0] = tx_data;
+  if (write(fd, buf, 1) != 1)
+  {
+	    perror("Failed to write to the i2c bus 1");
+        return -1;
+  }
+	
+  usleep(10000);
+  
+  tx_data = TSYS01TempReg;
+  
+  buf[0] = tx_data;
+  if (write(fd, buf, 1) != 1)
+  {
+	    perror("Failed to write to the i2c bus 2");
+        return -1;
+  }
+  
+  buf[0] = tx_data;
+  if (read(fd, buf, 3) != 3)
+  {
+	    perror("Failed to write to the i2c bus 3");
+        return -1;
+  }
+
+  MSB = buf[0];
+  OSB = buf[1];
+  LSB = buf[2];
+  
+//  printf("MSB=0x%02x\n",MSB);
+// printf("OSB=0x%02x\n",OSB);
+  
+  Temp1 = scaleTemp_C((((unsigned long)MSB << 8) | ((unsigned long)OSB)), coef); //convert and cast to Temp with scaling equation
+
+//  printf("temp1=%f\n",Temp1);
+  
+  *temp1 = Temp1;
+  
+  close(fd);
+  
+  return 0;
+	
 }
 
 int TSYS01_GetTemp(TSYS01_Sensor *sensor)

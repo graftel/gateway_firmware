@@ -131,6 +131,63 @@ int MCP79410_Read_Date(struct tm *result)
 	  return 0;
 }
 
+int MCP79410_Read_Epoch_Time(int *epoch)
+{
+	
+	uint8_t bSec,bMin,bHour,bDayofWeek,bDay,bMonth,bYear;
+	bool isLeapYear;
+	int fd;
+	bool isAM, is12;
+	fd = wiringPiI2CSetup(RTCaddress);
+	
+	bSec = wiringPiI2CReadReg8(fd, 0x00);
+	bMin = wiringPiI2CReadReg8(fd, 0x01);
+	bHour = wiringPiI2CReadReg8(fd, 0x02);
+	bDayofWeek = wiringPiI2CReadReg8(fd, 0x03);
+	bDay = wiringPiI2CReadReg8(fd, 0x04);
+	bMonth = wiringPiI2CReadReg8(fd, 0x05);
+	bYear = wiringPiI2CReadReg8(fd, 0x06);
+	
+	if (bSec == 0xff || bMin == 0xff || bHour == 0xff || bDayofWeek == 0xff || 
+		bDay == 0xff || bMonth == 0xff || bYear == 0xff || bSec == 0x00)
+	{
+		return -1;	
+	}
+	struct tm result;
+//	printf("read values %02x,%02x,%02x,%02x,%02x,%02x,%02x\n",bSec,bMin,bHour,bDayofWeek,bDay,bMonth,bYear);
+	
+	result.tm_sec = (((bSec - 0x80) & 0xF0) >> 4) * 10 + ((bSec - 0x80) & 0x0F);
+	result.tm_min = ((bMin & 0xF0) >> 4) * 10 + (bMin & 0x0F);
+	 
+	  if ((bHour & 0x40) == 0x40)
+	  {
+		  is12 = true;
+		  if (bHour & 0x20 == 0x20)
+		  {
+			isAM = false;
+		  }
+		  else
+		  {
+			isAM = true;
+		  }
+		  result.tm_hour = ((bHour & 0x10) >> 4) * 10 + (bHour & 0x0F);
+	  }
+	  else
+	  {
+		is12 = false;
+		result.tm_hour = ((bHour & 0x30) >> 4) * 10 + (bHour & 0x0F);
+	  }
+	  result.tm_wday = ((bDayofWeek & 0x07) == 7) ? 0 : bDayofWeek & 0x07 ; 
+	  result.tm_mday = ((bDay & 0x30) >> 4) * 10 + (bDay & 0x0F);
+	  result.tm_mon = ((bMonth & 0x10) >> 4) * 10 + (bMonth & 0x0F) - 1;
+	  result.tm_year = 100 + ((bYear & 0xF0) >> 4) * 10 + (bYear & 0x0F);
+	  
+	  (*epoch) = mktime(&result);
+	  
+	  
+	  return 0;
+}
+
 
 void MCP79410_Test(){    //sample code to read
 	 struct timespec start;
