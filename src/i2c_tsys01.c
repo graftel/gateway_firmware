@@ -10,9 +10,11 @@
 #include <linux/i2c-dev.h>
 #include <sys/ioctl.h>
 #include <fcntl.h>
-
+#include <defines.h>
+#include <utilities.h>
 
 //#define TSYS01Address 0x66  //address left shifted by arduino as required to match datasheet
+#define TSYS01ADDR_START_POS 4
 #define TSYS01Reset 0x1E //initiates reset
 #define TSYS01StartReg 0x48 //commands sensor to begin measurement / output calculation
 #define TSYS01TempReg 0x00 //requests most recent output from measurement
@@ -40,7 +42,52 @@ int status;
 uint8_t buf[3] = {0x00};
 
 const char *devName = "/dev/i2c-1";
-  
+
+void *read_i2c_sensor_data_wrapper(void *args)
+{
+	bridge *arguments = args;
+	
+	return (void *)read_tsys01_sensors(arguments);
+}
+
+int get_sensor_addr(bridge *b_data, int i2c_sensor_index, uint8_t *addr)
+{
+	if (sizeof(b_data->sen[i2c_sensor_index].addr) < MAX_SENSOR_ADDR)
+	{
+		return -1;
+	}
+	
+	(*addr) = char2hex(b_data->sen[i2c_sensor_index].addr, TSYS01ADDR_START_POS);
+	
+	return 0;
+	
+}
+
+int read_tsys01_sensors(bridge *b_data)
+{
+	uint8_t i;
+	for( i = 0; i < b_data->size_sen; i++)
+	{
+		TSYS01_Sensor sensor;
+	
+		uint8_t addr;
+		if (get_sensor_addr(b_data,i,&addr) == 0)
+		{
+			TSYS01_init(&sensor, addr);
+			
+			TSYS01_GetTemp(&sensor);
+			
+			b_data->sen[i].data = sensor.temp_reading;
+			
+			//printf("addr=0x%02x temp=%f\n",addr,sensor.temp_reading);
+		}
+		
+	}
+}
+
+
+
+
 int TSYS01_init(TSYS01_Sensor *sensor, uint8_t addr)
 { 
   int fd;
@@ -100,8 +147,8 @@ int TSYS01_init(TSYS01_Sensor *sensor, uint8_t addr)
 	uint8_t Ai = buf[0];
 	uint8_t Bi = buf[1];
 	
-	printf("Ai=0x%02x\n",Ai);
-	printf("Bi=0x%02x\n",Bi);
+//	printf("Ai=0x%02x\n",Ai);
+//	printf("Bi=0x%02x\n",Bi);
     
 	uint16_t x = (uint16_t)Ai << 8;
     x+=Bi;

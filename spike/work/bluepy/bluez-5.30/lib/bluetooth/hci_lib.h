@@ -1,0 +1,1 @@
+/home/pi/work/bluepy/bluez-5.30/lib/hci_lib.h

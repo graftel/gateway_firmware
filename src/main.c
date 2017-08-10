@@ -1,214 +1,138 @@
-// Main Program
-
-#include <i2c_tsys01.h>
-#include <string.h>
-#include <stdio.h>
-#include <sqlfunc.h>
-#include <defines.h>
-#include <stdlib.h>
+#include <glib.h>
 #include <i2c_rtc.h>
-#include <alarm_trigger.h>
-#include <signal.h>
+#include <ble_data_acq.h>
+#include <defines.h>
+#include <get_sensor_defs.h>
+#include <i2c_tsys01.h>
+#include <dynamoDBfunc.h>
+#include <utilities.h>
 
-struct tm *tm_info;
-time_t cur_read_time;
-int rc1 = 0;
-pthread_t thread1;
-
-void sigusr2(int signo, siginfo_t *info, void *extra) 
+int start_time,current_time;
+int interval = 60; // seconds
+int status = 0;
+int i = 0;
+static bridge bridge_data;
+static int running_cycle = 0;
+GThread *thread_tmp, *thread_send_data, *thread_ble_read;
+int rc;
+GError  *err1 = NULL;
+GError  *err2 = NULL;
+gboolean timeout_callback(gpointer data)
 {
-       void *ptr_val = info->si_value.sival_ptr;
-       int int_val = info->si_value.sival_int;
-       sensor_data *raw_data;
-    	int size_sensor_data = 0;
-		int rc1;
-		
-		DAQ_GetData(&raw_data, &size_sensor_data,int_val);
-		
-		int i = 0;
-		printf("check12\n");
-		printf("main:data.size_data=%d\n",size_sensor_data);
-		for (i = 0; i < size_sensor_data;i++)
+	
+	current_time = time(NULL);
+   //MCP79410_Read_Epoch_Time(&current_time);
+	
+    if ((current_time - start_time) % interval == 0)
+    {
+		if (check_internet() != 0)
 		{
-			printf("addr=%s ",raw_data[i].dev_address);
-			printf("data=%f\n",raw_data[i].data);
+			g_print("time(%d):no internet, waiting\n",time(NULL));	// only perform local DAQ
+		}
+		else
+		{
+			if (running_cycle == 0)
+			{
+				get_def_from_cloud(&bridge_data);
+				running_cycle++;
+			}
+			
+			if (bridge_data.size_cm != 0)
+			{
+				g_print("time(%d):get def from cloud, acquire ble data\n",time(NULL));
+				ble_data_acq(&bridge_data);
+		
+				g_print("time(%d):SEND DATA TO CLOUD THREAD\n",time(NULL));
+				// SEND DATA TO CLOUD THREAD
+				
+				bridge_data.current_timestamp = current_time;
+				
+				thread_send_data = g_thread_try_new("SEND_TO_CLOUD_TH", (GThreadFunc)send_data_to_cloud_wrapper, (gpointer)&bridge_data, &err2);
+				
+				if (err2 != NULL)
+				{
+					g_printerr("%s!\n",err2->message);
+				}
+				
+				g_thread_join(thread_send_data); 
+		
+			}
+			
+			
+
 		}
 		
+
 		
-		bulk_sensor_data sensor_bulk_data;
-		sensor_bulk_data.data = raw_data;
-		sensor_bulk_data.size_data = size_sensor_data;
-		
-		if( (rc1 = pthread_create( &thread1, NULL, &write_sqlite_sensor_data_wrapper, (void *)&sensor_bulk_data)))
+		// I2C DAQ Thread
+ /*		if (bridge_data.size_tmp != 0)
 		{
-			fprintf(stderr,"Thread creation failed: %d\n", rc1);
-		}
+			g_print("start_reading I2C temp\n");
+			
+			thread_tmp = g_thread_try_new("I2C_READING_TH", (GThreadFunc)read_i2c_sensor_data_wrapper, (gpointer)&bridge_data, &err1);
+			
+			if (err1 != NULL)
+			{
+				g_printerr("%s!\n",err1->message);
+			}
+			
+
+				
+		}*/
 		
-		printf("rc1=%d\n",rc1);
+		// Core Module Bluetooth DAQ Thread
+
 		
-		if (rc1 == 0)
-		{
-			rc1 = pthread_detach(thread1);
-		}
+
+		
+	//	g_thread_join(thread_tmp);
+		
+//		uint8_t i = 0;
+		
+//		for(i = 0; i < bridge_data.size_tmp; i++)
+//		{
+//			g_print("index=%d, reading=%f\n",i,bridge_data.tmp[i].temp);
+//		}
 		
 		
-		free(raw_data);
+    }
+	
+    return TRUE;
 }
 
 int main()
 {
-	struct sigaction action;
+/* 	int curSec = 00;    // 0-59
+	int curMin = 29;    // 0-59
+	int curHour = 12;    // 0-23 in 24-hour format
+	bool is12 = false;   // 12 = true, 24 = false
+	int curDay = 16;    // 1-31
+	int curMonth = 6;   // 1-12
+	int curYear = 2017; // 2000 - 2099
+	int curDayofweek = 5;  // 1-7 Monday = 1, Tuesday = 2.....
 
-	action.sa_flags = SA_SIGINFO; 
-	action.sa_sigaction = &sigusr2;
+	MCP79410_Setup_Date(curSec,curMin,curHour,curDayofweek,is12,curDay,curMonth,curYear); */	
+    GMainLoop *loop;
 
-	if (sigaction(SIGUSR2, &action, NULL) == -1) { 
-		perror("sigusr: sigaction");
-		return 1;
-	}	
-	//DAQ_ScanSensors_Upadte_SensorDef();
-	alarm_trigger_thread_args alarm_trigger_args;
-	alarm_trigger_args.interval = 10;
+	// Start Getting Sensor Definitions
+	//get_sensor_defs(&bridge_data);
 	
+	start_time = time(NULL);
 	
-	if( (rc1 = pthread_create( &thread1, NULL, &start_alarm_trigger_wrapper, (void *)&alarm_trigger_args)))
-	{
-		fprintf(stderr,"Thread creation failed: %d\n", rc1);
-	}
+//	MCP79410_Read_Epoch_Time(&start_time);
+	
+	g_print("start_time=%d\n",start_time);
+	
+    loop = g_main_loop_new ( NULL , FALSE );
+    // add source to default context
+	// add interface source 
+	
+    g_timeout_add (1000 , timeout_callback , loop); 
+    g_main_loop_run (loop);
+    g_main_loop_unref(loop);
 
-	if (rc1 == 0)
-	{
-		rc1 = pthread_detach(thread1);
-	}
-	
-	while(1)
-	{
-		// int epoch;
-		// MCP79410_Read_Epoch_Time(&epoch);
-		// printf("EPOCH TIME:%d\n",epoch);
-		sleep(1);
-	}
-	
-	// while(1)
-	// {
-		// sensor_data *raw_data;
-		// int size_sensor_data = 0;
-		// int rc1;
-		
-		// DAQ_GetData(&raw_data, &size_sensor_data);
-		
-		// int i = 0;
-		// printf("check12\n");
-		// printf("main:data.size_data=%d\n",size_sensor_data);
-		// for (i = 0; i < size_sensor_data;i++)
-		// {
-			// printf("addr=%s ",raw_data[i].dev_address);
-			// printf("data=%f\n",raw_data[i].data);
-		// }
-		
-		
-		// bulk_sensor_data sensor_bulk_data;
-		// sensor_bulk_data.data = raw_data;
-		// sensor_bulk_data.size_data = size_sensor_data;
-		
-		// if( (rc1 = pthread_create( &thread1, NULL, &write_sqlite_sensor_data_wrapper, (void *)&sensor_bulk_data)))
-		// {
-			// fprintf(stderr,"Thread creation failed: %d\n", rc1);
-		// }
-		
-		// printf("rc1=%d\n",rc1);
-		
-		// if (rc1 == 0)
-		// {
-			// rc1 = pthread_detach(thread1);
-		// }
-		
-		
-		// free(raw_data);
-		// sleep(10);
-	// }
-	
-		// if( (rc1 = pthread_create( &thread1, NULL, &write_sqlite_sensor_data_wrapper, (void *)&data)))
-		// {
-			// fprintf(stderr,"Thread creation failed: %d\n", rc1);
-		// }
-		
-		// printf("rc1=%d\n",rc1);
-		
-		// if (rc1 == 0)
-		// {
-			// rc1 = pthread_detach(thread1);
-		// }
-		
-//		printf("Temp1=%f\n",s1.temp_reading);
-		
-
-
-	// int status;
-	// TSYS01_Sensor s1,s2,s3,s4;
-	
-	// status = TSYS01_init(&s1, 0x66);
-	// status = TSYS01_init(&s2, 0x67);
-	// status = TSYS01_init(&s3, 0x78);
-	// status = TSYS01_init(&s4, 0x79);
-	// if (status != 0)
-	// {
-		// printf("init error\n");
-		// return -1;
-	// }
-		
-	// while(1)
-	// {
-		// status = TSYS01_GetTemp(&s1);
-		// status = TSYS01_GetTemp(&s2);
-		// status = TSYS01_GetTemp(&s3);
-		// status = TSYS01_GetTemp(&s4);
-		
-		// printf("temp1=%f\n",s1.temp_reading);
-		// printf("temp1=%f\n",s2.temp_reading);
-		// printf("temp1=%f\n",s3.temp_reading);
-		// printf("temp1=%f\n",s4.temp_reading);
-		
-		// // if (status != 0)
-		// // {
-			// // printf("read error\n");
-		// // }
-		// // tm_info = localtime(&cur_read_time);
-		
-		// // sensor_data s_data1;
-		
-		// // s_data1.time_stamp = cur_read_time;
-		// // s_data1.data = s1.temp_reading;
-		// // strcpy(s_data1.data_tag,"I2C:Temp");
-		// // strcpy(s_data1.dev_address,"0x66");
-		// // strcpy(s_data1.data_unit,"C");
-		// // strcpy(s_data1.data_type,"Temperature");
-		// // strcpy(s_data1.serial_num,"123456");
-		// // strcpy(s_data1.ble_address,"11:22:33:44:55:66");
-		// // strcpy(s_data1.protocol,"I2C");
-		// // strcpy(s_data1.note,"Special Note");
-		
-		// // bulk_sensor_data sensor_bulk_data;
-		// // sensor_bulk_data.data = &s_data1;
-		// // sensor_bulk_data.size_data = 1;
-		
-		// // if( (rc1 = pthread_create( &thread1, NULL, &write_sqlite_sensor_data_wrapper, (void *)&sensor_bulk_data)))
-		// // {
-			// // fprintf(stderr,"Thread creation failed: %d\n", rc1);
-		// // }
-		
-		// // printf("rc1=%d\n",rc1);
-		
-		// // if (rc1 == 0)
-		// // {
-			// // rc1 = pthread_detach(thread1);
-		// // }
-		
-// //		printf("Temp1=%f\n",s1.temp_reading);
-		
-		// sleep(10);
-	// }
-	
-	return 0;
-	
+done:
+	g_print("free everything");
+	free_defs(&bridge_data);
+    return 0;
 }

@@ -1,1 +1,0 @@
-// ethernet interface functions

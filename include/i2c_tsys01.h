@@ -10,6 +10,7 @@ typedef struct {
 	int init_status;
 } TSYS01_Sensor;
 
+void *read_i2c_sensor_data_wrapper(void *args);
 int TSYS01_init(TSYS01_Sensor *sensor, uint8_t addr);
 int TSYS01_GetTemp(TSYS01_Sensor *sensor);
 
