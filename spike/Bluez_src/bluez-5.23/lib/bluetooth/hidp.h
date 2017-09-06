@@ -1,1 +1,0 @@
-/home/pi/Bluez_src/bluez-5.23/lib/hidp.h
