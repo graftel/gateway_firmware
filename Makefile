@@ -9,7 +9,7 @@ SDIR=src
 SRCEXT := c
 CFLAGS=-I$(IDIR) `pkg-config --cflags --libs glib-2.0`
 #LIBS=-lconfig -lbluetooth -lsqlite3 -lpthread -lmhash -luuid
-LIBS=-lm -ljson-c -lwiringPi -lbluetooth -lmhash -luuid
+LIBS=-lm -ljson-c -lbluetooth -lmhash
 
 APP_NAME=bridge
 

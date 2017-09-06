@@ -1,7 +1,7 @@
 // Functions to upload data to dynamo DB
 
 #include <dynamoDBfunc.h>
-#include <json/json.h>
+#include <json-c/json.h>
 #include <glib.h>
 #define CHUNK_SIZE 512
 int get_sensors_def_from_clouud(bridge *data);

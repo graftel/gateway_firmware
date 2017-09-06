@@ -46,7 +46,7 @@
 //#define     DATE                   "20160824"
 #define  	INTERNET_CHECK_HOST    "www.google.com"
 
-
+#define DEBUG 1
 #define DEFAULT_ERR_VALUE 999.0F
 
 #include <time.h>
