@@ -16,13 +16,7 @@
 #define MAX_HTTP_REQUEST_SIZE 65535
 #define MAX_HTTP_RESPONSE_SIZE 65535
 
-#define     AWS_ACCESS_KEY         "AKIAJ5YW27C7WNKRXB4Q"                         // Put your AWS access key here.  
-                                                                                 // Don't put the read-only user credentials here, instead use your AWS account credentials
-                                                                                 // or the credentials of an account with write access to your DynamoDB table here.
-                                                                                 
-#define     AWS_SECRET_ACCESS_KEY  "KZQw/w182YfzPhInrBj0oG15I+79YFgZgVnsLAIt"                  // Put your AWS secret access key here.
-                                                                                 // Don't put the read-only user credentials here, instead use your AWS account credentials
-                                                                                 // or the credentials of an account with write access to your DynamoDB table here.
+
 
 #define     AWS_REGION             "us-east-1"                                   // The region where your dynamo DB table lives.
                                                                                  // Copy the _exact_ region value from this table: http://docs.aws.amazon.com/general/latest/gr/rande.html#ddb_region 
