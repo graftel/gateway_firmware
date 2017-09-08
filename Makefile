@@ -7,7 +7,7 @@ ODIR=obj
 LDIR=lib
 SDIR=src
 SRCEXT := c
-CFLAGS=-I$(IDIR) `pkg-config --cflags --libs glib-2.0`
+CFLAGS=-I$(IDIR) `pkg-config --cflags --libs glib-2.0` -Wall -O2
 #LIBS=-lconfig -lbluetooth -lsqlite3 -lpthread -lmhash -luuid
 LIBS=-lm -ljson-c -lbluetooth -lmhash
 
