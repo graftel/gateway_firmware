@@ -3,6 +3,7 @@
 #include <utilities.h>
 #include <ble_data_acq.h>
 #include <dynamodb_utilities.h>
+#include <localdb_utilities.h>
 
 int start_time,current_time; // test
 int interval = 10; // seconds
@@ -10,7 +11,8 @@ int status = 0;
 int i = 0;
 static bridge bridge_data;
 //static int running_cycle = 0;
-GThread *thread_tmp, *thread_send_data, *thread_ble_read;
+GThread *thread_localdb, *sync_db;
+
 int rc;
 GError  *err1 = NULL;
 GError  *err2 = NULL;
@@ -23,6 +25,7 @@ gboolean timeout_callback(gpointer data)
     if ((current_time - start_time) % interval == 0)
     {
 				//start collecting data based on config file
+				bridge_data.current_timestamp = current_time;
 				for (i = 0; i < bridge_data.size_cm; i++)
 				{
 					core_module *cur_cm = &bridge_data.cm[i];
@@ -37,8 +40,12 @@ gboolean timeout_callback(gpointer data)
 					}
 
 				}
-
-
+				thread_localdb = g_thread_try_new("LOCAL_DB_TH", (GThreadFunc)write_sqlite_hx_data_wrapper, (gpointer)&bridge_data, &err1);
+				// save all data to local db thread
+				if (err1 != NULL)
+				{
+					g_printerr("%s!\n",err1->message);
+				}
 /*
 		if (check_internet() != 0)
 		{
@@ -108,17 +115,18 @@ int main()
 //	MCP79410_Read_Epoch_Time(&start_time);
 
 	DEBUG_PRINT("start_time=%d\n",start_time);
+	sync_db = g_thread_try_new("SYNC_DB_TH", (GThreadFunc)sync_data_with_cloud_wrapper, (gpointer)&bridge_data, &err1);
 
-    loop = g_main_loop_new ( NULL , FALSE );
-    // add source to default context
-	// add interface source
+  loop = g_main_loop_new ( NULL , FALSE );
+  // add source to default context
+// add interface source
 
-    g_timeout_add (1000 , timeout_callback , loop);
-    g_main_loop_run (loop);
-    g_main_loop_unref(loop);
+  g_timeout_add (1000 , timeout_callback , loop);
+  g_main_loop_run (loop);
+  g_main_loop_unref(loop);
 
 
-		g_print("free everything");
-		free_defs(&bridge_data);
-    return 0;
+	g_print("free everything");
+	free_defs(&bridge_data);
+  return 0;
 }

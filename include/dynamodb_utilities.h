@@ -18,6 +18,7 @@
 #include <sys/ioctl.h>
 #include <json-c/json.h>
 #include <glib.h>
+#include <defines.h>
 
 void *send_data_to_cloud_wrapper(void *args);
 int recv_timeout(int s , int timeout, char *resp);
@@ -30,5 +31,7 @@ int send_alert_to_cloud(bridge *data);
 int get_core_module_def_from_cloud(bridge *data);
 int send_sensor_data_to_cloud(bridge *data);
 int free_defs(bridge *data);
+
+void *sync_data_with_cloud_wrapper(void *args);
 
 #endif

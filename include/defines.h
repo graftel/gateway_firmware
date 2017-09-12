@@ -27,7 +27,6 @@
 
 #define     AWS_REGION             "us-east-1"                                   // The region where your dynamo DB table lives.
                                                                                  // Copy the _exact_ region value from this table: http://docs.aws.amazon.com/general/latest/gr/rande.html#ddb_region
-
 #define     AWS_HOST               "dynamodb.us-east-1.amazonaws.com"            // The endpoint host for where your dynamo DB table lives.
                                                                                  // Copy the _exact_ endpoint host from this table: http://docs.aws.amazon.com/general/latest/gr/rande.html#ddb_region
 #define		AWS_PORT_NUM			80
@@ -48,7 +47,7 @@
 //#define     DATE                   "20160824"
 #define  	INTERNET_CHECK_HOST    "www.google.com"
 
-#define DEBUG 2
+#define DEBUG 3
 #define DEFAULT_ERR_VALUE 999.0F
 
 #if defined(DEBUG) && DEBUG == 1
@@ -56,6 +55,16 @@
     __FILE__, __LINE__, __func__, ##args)
 #elif defined(DEBUG) && DEBUG == 2
 	#define DEBUG_PRINT(fmt, args...) fprintf(stderr, fmt, ## args)
+  #define DEBUG_PRINT3(fmt, args...) fprintf(stderr, fmt, ## args)
+  #define DEBUG_PRINT4(fmt, args...) fprintf(stderr, fmt, ## args)
+#elif defined(DEBUG) && DEBUG == 3
+  #define DEBUG_PRINT3(fmt, args...) fprintf(stderr, fmt, ## args)
+  #define DEBUG_PRINT(fmt, args...)
+  #define DEBUG_PRINT4(fmt, args...)
+#elif defined(DEBUG) && DEBUG == 4
+  #define DEBUG_PRINT4(fmt, args...) fprintf(stderr, fmt, ## args)
+  #define DEBUG_PRINT(fmt, args...)
+  #define DEBUG_PRINT3(fmt, args...)
 #else
  #define DEBUG_PRINT(fmt, args...) /* Don't do anything in release builds */
 #endif
@@ -149,6 +158,9 @@ typedef struct
 	int				size_sen;
 	int				index_sen;
 
+  uint16_t   read_handle;
+  uint16_t   write_handle;
+  int       discovered;
 	int				err_list[MAX_ERROR_MSG];
 	int				size_err;
 } core_module;

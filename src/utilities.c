@@ -252,6 +252,7 @@ int load_config(bridge *bridge_data)
 						json_object * jsensor = NULL;
 						bridge_data->cm[i].size_sen = json_object_array_length(jsensors);
 						bridge_data->cm[i].index_sen = 0;
+						bridge_data->cm[i].discovered = 0;
 						bridge_data->cm[i].sen = g_try_new0(sensor, bridge_data->cm[i].size_sen);
 
 						for(j = 0; j < bridge_data->cm[i].size_sen; j++)

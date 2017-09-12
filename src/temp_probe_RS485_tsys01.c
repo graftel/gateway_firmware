@@ -46,7 +46,7 @@ data_code_def process_ble_resp_temp_probe_RS485_tsys01(sensor *sen, char *ble_re
     {
         DEBUG_PRINT("read ok\n");
         memcpy(&temp_value, ble_resp + 9, sizeof(float));
-        DEBUG_PRINT("temp_reading=%f\n",temp_value);
+        DEBUG_PRINT3("temp_reading=%f\n",temp_value);
 
         sen->data = temp_value;
     }

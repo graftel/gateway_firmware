@@ -25,6 +25,8 @@ static char ble_cmd[MAX_BLE_PACKET_LEN];
 static int ble_resp_len;
 static char ble_resp[MAX_BLE_PACKET_LEN];
 int cur_size_err;
+static const uint8_t BLE_UUID_OUR_CHARACTERISTC_READ_UUID[]  = {0x23, 0xD1, 0x13, 0xEF, 0x5F, 0x78, 0x23, 0x15, 0xDE, 0xEF, 0x12, 0x12, 0x55, 0x47, 0x00, 0x00};
+static const uint8_t BLE_UUID_OUR_CHARACTERISTC_WRITE_UUID[] = {0x23, 0xD1, 0x13, 0xEF, 0x5F, 0x78, 0x23, 0x15, 0xDE, 0xEF, 0x12, 0x12, 0x56, 0x47, 0x00, 0x00};
 
 static int set_sec_level(int sock, int level)
 {
@@ -244,7 +246,7 @@ FAIL:
 	return -1;
 }
 
-data_code_def send_ble_cmd_with_response(char *cmd, int cmd_len, char *resp, int *resp_len)
+data_code_def send_ble_cmd_with_response(char *cmd, int cmd_len, char *resp, int *resp_len, core_module *cm)
 {
 	int i;
 	data_code_def err_no;
@@ -267,7 +269,7 @@ data_code_def send_ble_cmd_with_response(char *cmd, int cmd_len, char *resp, int
 	memset(int_wdata,0,sizeof(int_wdata));
 
 	int_wdata[0] = 0x12;
-	int_wdata[1] = WRITE_HANDLE;
+	int_wdata[1] = cm->write_handle;
 	int_wdata[2] = 0x00;
 
 	int_wcmd_len = cmd_len + 3;
@@ -305,7 +307,7 @@ data_code_def send_ble_cmd_with_response(char *cmd, int cmd_len, char *resp, int
 		memset(int_wdata,0,sizeof(int_wdata));
 
 		int_wdata[0] = 0x0a;
-		int_wdata[1] = READ_HANDLE;
+		int_wdata[1] = cm->read_handle;
 		int_wdata[2] = 0x00;
 
 		int_wcmd_len = 3;
@@ -358,52 +360,197 @@ FAIL:
 	return err_no;
 }
 
+
+int enc_discover_cmd(uint16_t start, uint16_t end, uint8_t *buf, int *len)
+{
+
+
+	/* Attribute Opcode (1 octet) */
+	buf[0] = ATT_OP_READ_BY_TYPE_REQ;
+
+	buf[1] = (uint8_t)start;
+
+	buf[2] = (uint8_t)(start >> 8);
+
+	buf[3] = (uint8_t)end;
+
+	buf[4] = (uint8_t)(end >> 8);
+
+	buf[5] = (uint8_t)GATT_CHARAC_UUID;
+
+	buf[6] = (uint8_t)(GATT_CHARAC_UUID >> 8);
+
+	(*len) = 7;
+
+	return 0;
+}
+
+data_code_def dicover_char(core_module *cm) // search handle from 0x0001 to 0xffff
+{
+	uint8_t buf[MAX_BLE_PACKET_LEN], read_buf[MAX_BLE_PACKET_LEN];
+	int plen = 0, rlen = 0, block_size;
+	data_code_def err_no = OK;
+	memset(buf, 0, sizeof(buf));
+
+	uint16_t start = 0x0001;
+	uint16_t end = 0xffff;
+
+	read_buf[0] = 0x00;
+
+
+	while(read_buf[0] != ATT_OP_ERROR)
+	{
+		enc_discover_cmd(start, end, buf, &plen);
+
+		if (write_ble_data((char*)buf, plen) != 0 )
+		{
+			err_no = BLE_WRITE_ERR;
+			goto FAIL;
+		}
+
+		memset(read_buf,0,sizeof(read_buf));
+		if (read_ble_data((char*)read_buf, &rlen) != 0 )
+		{
+			DEBUG_PRINT("read_error_1\n");
+			err_no = BLE_READ_ERR;
+			goto FAIL;
+		}
+
+		block_size = read_buf[1];
+
+		if (read_buf[0] == ATT_OP_ERROR)
+		{
+			err_no = OK;
+			goto SUCCESS;
+		}
+
+		if ((rlen - 2) / block_size >=1)
+		{
+			DEBUG_PRINT("discover ok\n");
+			if (block_size - 5 == MAX_UUID_LEN) // maybe what we need
+			{
+
+				if (memcmp(read_buf + 7, BLE_UUID_OUR_CHARACTERISTC_READ_UUID, MAX_UUID_LEN) == 0)
+				{
+					 DEBUG_PRINT("found read handle\n");
+					 cm->read_handle = (read_buf[6] << 8) | (read_buf[5]);
+					 DEBUG_PRINT("0x%04x\n", cm->read_handle);
+					 cm->discovered++;
+				}
+				else if (memcmp(read_buf + 7, BLE_UUID_OUR_CHARACTERISTC_WRITE_UUID, MAX_UUID_LEN) == 0)
+				{
+					DEBUG_PRINT("found write handle: ");
+					cm->write_handle = (read_buf[6] << 8) | (read_buf[5]);
+					DEBUG_PRINT("0x%04x\n", cm->write_handle);
+					cm->discovered++;
+				}
+
+			}
+
+			if (block_size == 0x07)
+			{
+				start = (read_buf[rlen - 3] << 8) | read_buf[rlen - 4];
+			}
+			else if (block_size == 0x15)
+			{
+				start = (read_buf[rlen - MAX_UUID_LEN - 1] << 8) | read_buf[rlen - MAX_UUID_LEN - 2];
+			}
+			else if (block_size == 0x08)
+			{
+				err_no = OK;
+				goto SUCCESS;
+			}
+			else
+			{
+				DEBUG_PRINT("Unknown cmd\n");
+				err_no = BLE_READ_ERR;
+				goto FAIL;
+			}
+
+			DEBUG_PRINT("start=0x%04x\n",start);
+		}
+		else
+		{
+			DEBUG_PRINT("Read error cmd\n");
+			err_no = BLE_READ_ERR;
+			goto FAIL;
+		}
+
+	}
+
+SUCCESS:
+	return err_no;
+FAIL:
+	return err_no;
+}
+
 int ble_data_acq(core_module *cm)
 {
 		int i;
 
-		DEBUG_PRINT("start BLE read, ID=%s,address=%s\n",cm->addr,cm->ble_addr);
+		DEBUG_PRINT3("start BLE read, ID=%s,address=%s\n",cm->addr,cm->ble_addr);
 
 		if (connect_ble(cm->ble_addr) == 0){
 					for (i = 0; i < cm->size_sen; i++)
 					{
-								DEBUG_PRINT("start read sensor #%d\n", i);
-							// rounting sensor protocol functions
-								if (strncmp(cm->sen[i].addr,"02",2) == 0)	// RS485 TSYS01 Probe
+								if (cm->discovered == 0)
 								{
-										DEBUG_PRINT("detect tsys01 sensor\n");
-										sensor *sen = &cm->sen[i];
-										if(get_ble_cmd_temp_probe_RS485_tsys01(sen, ble_cmd, &ble_cmd_len) != 0)
+										DEBUG_PRINT3("start finding desc\n");
+										if (dicover_char(cm) == OK)
 										{
-											 DEBUG_PRINT("cannot get ble command\n");
-											 goto FAIL;
+											DEBUG_PRINT3("desc find ok\n");
 										}
-
-										cm->sen[i].data_code = send_ble_cmd_with_response(ble_cmd, ble_cmd_len, ble_resp, &ble_resp_len);
-
-										if (cm->sen[i].data_code == OK)
+										else
 										{
-											cm->sen[i].data_code = process_ble_resp_temp_probe_RS485_tsys01(sen, ble_resp, ble_resp_len);
+											DEBUG_PRINT3("desc find error\n");
 										}
+								}
 
-										if (cm->sen[i].data_code != OK)
+								if (cm->discovered == 2)
+								{
+
+										DEBUG_PRINT3("start read sensor #%d\n", i);
+									// rounting sensor protocol functions
+										if (strncmp(cm->sen[i].addr,"02",2) == 0)	// RS485 TSYS01 Probe
 										{
-											DEBUG_PRINT("data error\n");
+												DEBUG_PRINT("detect tsys01 sensor\n");
+												sensor *sen = &cm->sen[i];
+												if(get_ble_cmd_temp_probe_RS485_tsys01(sen, ble_cmd, &ble_cmd_len) != 0)
+												{
+													 DEBUG_PRINT("cannot get ble command\n");
+													 goto FAIL;
+												}
+
+												cm->sen[i].data_code = send_ble_cmd_with_response(ble_cmd, ble_cmd_len, ble_resp, &ble_resp_len, cm);
+
+												if (cm->sen[i].data_code == OK)
+												{
+													cm->sen[i].data_code = process_ble_resp_temp_probe_RS485_tsys01(sen, ble_resp, ble_resp_len);
+												}
+
+												if (cm->sen[i].data_code != OK)
+												{
+													DEBUG_PRINT("data error\n");
+													cm->sen[i].data = ERROR_DATA_VALUE;
+												}
+
+												DEBUG_PRINT("data ok\n");
+										}
+										else if (strncmp(cm->sen[i].addr,"03", 2) == 0)	// 12-CH 10K Probe
+										{
+
+
+										}
+										else																			// Unknown probe
+										{
 											cm->sen[i].data = ERROR_DATA_VALUE;
+											cm->sen[i].data_code = UNKNOWN_PROBE_DEFINITION;
 										}
-
-										DEBUG_PRINT("data ok\n");
 								}
-								else if (strncmp(cm->sen[i].addr,"03", 2) == 0)	// 12-CH 10K Probe
-								{
 
 
-								}
-								else																			// Unknown probe
-								{
-									cm->sen[i].data = ERROR_DATA_VALUE;
-									cm->sen[i].data_code = UNKNOWN_PROBE_DEFINITION;
-								}
+
+
 					}
 		}
 		else{

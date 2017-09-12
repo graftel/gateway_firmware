@@ -4,10 +4,13 @@
 #include <dynamodb_utilities.h>
 #include <utilities.h>
 #include <errno.h>
+#include <localdb_utilities.h>
 
 int get_sensors_def_from_clouud(bridge *data);
 int get_sensors_def_from_single_core_module(bridge *data, int index);
 int get_core_module_def_from_cloud(bridge *data);
+char sql_query[500];
+bridge *bridge_data;
 
 char *get_aws_request_str(aws_request_num num)
 {
@@ -20,6 +23,154 @@ char *get_aws_request_str(aws_request_num num)
 		case AWSDB_BATCH_WRITE_ITEM: return "DynamoDB_20120810.BatchWriteItem";
 		case AWSDB_UPDATE_ITEM: return "DynamoDB_20120810.UpdateItem";
 		default: return "UNKNOWN";
+	}
+}
+
+static int sqlite3_query_callback(void *data, int argc, char **argv, char **azColName) {
+	int i;
+
+	for (i = 0; i < argc; i++){
+			if (strcmp(azColName[i], "data_time_stamp") == 0)
+			{
+
+			}
+			printf("%s = %s\n", azColName[i], argv[i] ? argv[i] : "NULL");
+	}
+	return 0;
+}
+
+int check_raw_data_exist(int timestamp, char *deviceID)
+{
+	char payload[MAX_HTTP_REQUEST_SIZE];
+	char http_request[MAX_HTTP_REQUEST_SIZE];
+	char http_response[MAX_HTTP_RESPONSE_SIZE];
+	char str_timestamp[20];
+	int http_request_len;
+	int http_response_len;
+	int i;
+	json_object *jobj_root = json_object_new_object();
+	json_object *jtable_name = json_object_new_string("Hx.RawData");
+	json_object_object_add(jobj_root,"TableName",jtable_name);
+
+	json_object *jprojexp = json_object_new_string("DeviceID, EpochTimeStamp");
+	json_object_object_add(jobj_root,"ProjectionExpression",jprojexp);
+
+	json_object *jkeyexp = json_object_new_string("DeviceID = :v1 AND EpochTimeStamp = :v2");
+	json_object_object_add(jobj_root,"KeyConditionExpression",jkeyexp);
+
+	json_object *jexpvalue = json_object_new_object();
+
+	json_object *jdevice_id = json_object_new_string(deviceID);
+	json_object *jvalue = json_object_new_object();
+	json_object_object_add(jvalue,"S",jdevice_id);
+	json_object_object_add(jexpvalue,":v1",jvalue);
+
+	sprintf(str_timestamp, "%d", timestamp);
+	json_object *jtimestamp = json_object_new_string(str_timestamp);
+	json_object *jvalue1 = json_object_new_object();
+	json_object_object_add(jvalue1,"N",jtimestamp);
+	json_object_object_add(jexpvalue,":v2",jvalue1);
+
+	json_object_object_add(jobj_root,"ExpressionAttributeValues",jexpvalue);
+
+	json_object *jcapacity = json_object_new_string("TOTAL");
+	json_object_object_add(jobj_root,"ReturnConsumedCapacity",jcapacity);
+
+	sprintf(payload, "%s",json_object_to_json_string_ext(jobj_root, JSON_C_TO_STRING_PLAIN));
+
+	json_object_put(jobj_root);
+
+	int ipayloadlength = strlen(payload);
+
+	printf("%s\n",payload);
+
+	if (put_dynamodb_http_request(payload, ipayloadlength, http_request, &http_request_len, AWSDB_QUERY) != 0)
+	{
+		return -1;
+	}
+
+	if (send_http_request_to_dynamodb(http_request, http_request_len, http_response, &http_response_len) != 0)
+	{
+		return -1;
+	}
+
+	char *date_pos,*http_pos,*json_start;
+
+	http_pos = strstr(http_response, "HTTP/1.1 200 OK");
+	date_pos = strstr(http_response, "Date:");
+	json_start = strstr(http_response, "{");
+	if (http_pos == NULL)
+	{
+		return -1;
+	}
+
+	if (date_pos == NULL)
+	{
+		return -1;
+	}
+
+	return 0;
+
+}
+
+void *sync_data_with_cloud_wrapper(void *args)
+{
+	bridge_data = (bridge *)args;
+	while(1)		// run forever
+	{
+		  // first scan local db data
+			sqlite3 *db;
+	//		char *zErrMsg = 0;
+			sqlite3_stmt *stmt;
+			int rc;
+
+			char db_path[100];
+
+			strcpy(db_path, HX_SQLITE_DATA_FOLDER_NAME);
+			strcat(db_path, "/");
+			strcat(db_path, HX_SQLITE_FILE_NAME);
+
+			rc = sqlite3_open(db_path, &db);
+
+			if (rc != SQLITE_OK) {
+
+	        fprintf(stderr, "Cannot open database: %s\n", sqlite3_errmsg(db));
+	        sqlite3_close(db);
+	    }
+			else
+			{
+				memset(sql_query,0,sizeof(sql_query));
+
+				strcpy (sql_query, "select * from ");
+				strcat (sql_query, HX_MAIN_TABLE_NAME);
+				strcat (sql_query, " where sync_status = 0;");
+
+				sqlite3_prepare_v2(db, sql_query, -1, &stmt, NULL);
+				printf("Got results:\n");
+				while(sqlite3_step(stmt) != SQLITE_DONE) {
+						int i;
+						int cur_timestamp = sqlite3_column_int(stmt,2);
+						char *deviceID = sqlite3_column_text(stmt,3);
+						double data = sqlite3_column_double(stmt,4);
+						int data_quality = sqlite3_column_int(stmt,5);
+
+						printf("timestamp=%d\n", cur_timestamp );
+						printf("deviceID= %s\n", deviceID);
+						if (check_raw_data_exist(cur_timestamp, deviceID) != 0)
+						{
+								printf("no data exists ok\n");
+						}
+						usleep(100000000);
+				}
+
+				sqlite3_finalize(stmt);
+
+				sqlite3_close(db);
+			}
+
+
+
+			usleep(10000000);
 	}
 }
 
@@ -192,7 +343,13 @@ int put_dynamodb_http_request(char *payload, int payload_len, char *http_request
 
 	printf("time_full=%s\n",time_full);
 
-	td = mhash_hmac_init(MHASH_SHA256, (uint8_t*)AWS_SIG_START, strlen(AWS_SIG_START), mhash_get_hash_pblock(MHASH_SHA256));
+	char SIG_FULL[100];
+	strcpy(SIG_FULL, AWS_SIG_START);
+	strcat(SIG_FULL, bridge_data->aws_secret_access_key);
+
+	printf("SIG_FULL = %s\n", SIG_FULL);
+
+	td = mhash_hmac_init(MHASH_SHA256, (uint8_t*)SIG_FULL, strlen(SIG_FULL), mhash_get_hash_pblock(MHASH_SHA256));
 	mhash(td, time_date, strlen(time_date));
 	mac = mhash_hmac_end(td);
 
@@ -313,7 +470,7 @@ int put_dynamodb_http_request(char *payload, int payload_len, char *http_request
 	strcat(send_message, "\r\nx-amz-date: ");
 	strcat(send_message, time_full);
 	strcat(send_message, "\r\nAuthorization: AWS4-HMAC-SHA256 Credential=");
-//	strcat(send_message, AWS_ACCESS_KEY);
+	strcat(send_message, bridge_data->aws_access_key);
 	strcat(send_message, "/");
 	strcat(send_message, time_date);
 	strcat(send_message, "/");
