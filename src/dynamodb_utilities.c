@@ -6,9 +6,6 @@
 #include <errno.h>
 #include <localdb_utilities.h>
 
-int get_sensors_def_from_clouud(bridge *data);
-int get_sensors_def_from_single_core_module(bridge *data, int index);
-int get_core_module_def_from_cloud(bridge *data);
 char sql_query[500];
 bridge *bridge_data;
 
@@ -26,55 +23,48 @@ char *get_aws_request_str(aws_request_num num)
 	}
 }
 
-static int sqlite3_query_callback(void *data, int argc, char **argv, char **azColName) {
-	int i;
-
-	for (i = 0; i < argc; i++){
-			if (strcmp(azColName[i], "data_time_stamp") == 0)
-			{
-
-			}
-			printf("%s = %s\n", azColName[i], argv[i] ? argv[i] : "NULL");
-	}
-	return 0;
-}
-
-int check_raw_data_exist(int timestamp, char *deviceID)
+int sync_single_raw_data(int timestamp, char *deviceID, double data, int data_quality)
 {
 	char payload[MAX_HTTP_REQUEST_SIZE];
 	char http_request[MAX_HTTP_REQUEST_SIZE];
 	char http_response[MAX_HTTP_RESPONSE_SIZE];
-	char str_timestamp[20];
+	char tmp_char[50];
 	int http_request_len;
 	int http_response_len;
-	int i;
+
 	json_object *jobj_root = json_object_new_object();
 	json_object *jtable_name = json_object_new_string("Hx.RawData");
 	json_object_object_add(jobj_root,"TableName",jtable_name);
 
-	json_object *jprojexp = json_object_new_string("DeviceID, EpochTimeStamp");
-	json_object_object_add(jobj_root,"ProjectionExpression",jprojexp);
-
-	json_object *jkeyexp = json_object_new_string("DeviceID = :v1 AND EpochTimeStamp = :v2");
-	json_object_object_add(jobj_root,"KeyConditionExpression",jkeyexp);
-
-	json_object *jexpvalue = json_object_new_object();
+	json_object *jitem = json_object_new_object();
 
 	json_object *jdevice_id = json_object_new_string(deviceID);
 	json_object *jvalue = json_object_new_object();
 	json_object_object_add(jvalue,"S",jdevice_id);
-	json_object_object_add(jexpvalue,":v1",jvalue);
+	json_object_object_add(jitem,"DeviceID",jvalue);
 
-	sprintf(str_timestamp, "%d", timestamp);
-	json_object *jtimestamp = json_object_new_string(str_timestamp);
+	memset(tmp_char, 0, sizeof(tmp_char));
+	sprintf(tmp_char, "%d", timestamp);
+	json_object *jtimestamp = json_object_new_string(tmp_char);
 	json_object *jvalue1 = json_object_new_object();
 	json_object_object_add(jvalue1,"N",jtimestamp);
-	json_object_object_add(jexpvalue,":v2",jvalue1);
+	json_object_object_add(jitem,"EpochTimeStamp",jvalue1);
 
-	json_object_object_add(jobj_root,"ExpressionAttributeValues",jexpvalue);
+	memset(tmp_char, 0, sizeof(tmp_char));
+	sprintf(tmp_char, "%f", data);
+	json_object *jdata = json_object_new_string(tmp_char);
+	json_object *jvalue2 = json_object_new_object();
+	json_object_object_add(jvalue2,"N",jdata);
+	json_object_object_add(jitem,"Value",jvalue2);
 
-	json_object *jcapacity = json_object_new_string("TOTAL");
-	json_object_object_add(jobj_root,"ReturnConsumedCapacity",jcapacity);
+	memset(tmp_char, 0, sizeof(tmp_char));
+	sprintf(tmp_char, "%d", data_quality);
+	json_object *jdata_quality = json_object_new_string(tmp_char);
+	json_object *jvalue3 = json_object_new_object();
+	json_object_object_add(jvalue3,"N",jdata_quality);
+	json_object_object_add(jitem,"Data Quality",jvalue3);
+
+	json_object_object_add(jobj_root,"Item",jitem);
 
 	sprintf(payload, "%s",json_object_to_json_string_ext(jobj_root, JSON_C_TO_STRING_PLAIN));
 
@@ -82,9 +72,9 @@ int check_raw_data_exist(int timestamp, char *deviceID)
 
 	int ipayloadlength = strlen(payload);
 
-	printf("%s\n",payload);
+	DEBUG_PRINT("%s\n",payload);
 
-	if (put_dynamodb_http_request(payload, ipayloadlength, http_request, &http_request_len, AWSDB_QUERY) != 0)
+	if (put_dynamodb_http_request(payload, ipayloadlength, http_request, &http_request_len, AWSDB_PUT_ITEM) != 0)
 	{
 		return -1;
 	}
@@ -109,26 +99,32 @@ int check_raw_data_exist(int timestamp, char *deviceID)
 		return -1;
 	}
 
+	if (json_start == NULL)
+	{
+		return -1;
+	}
+
 	return 0;
 
 }
 
-void *sync_data_with_cloud_wrapper(void *args)
-{
-	bridge_data = (bridge *)args;
-	while(1)		// run forever
-	{
-		  // first scan local db data
-			sqlite3 *db;
-	//		char *zErrMsg = 0;
-			sqlite3_stmt *stmt;
-			int rc;
 
+int sync_hx_data()
+{
+			if (check_internet() != 0)
+			{
+					fprintf(stderr, "no internet, cannot send data to remote\n");
+					return 2;
+			}
 			char db_path[100];
 
 			strcpy(db_path, HX_SQLITE_DATA_FOLDER_NAME);
 			strcat(db_path, "/");
 			strcat(db_path, HX_SQLITE_FILE_NAME);
+			sqlite3 *db;
+	//		char *zErrMsg = 0;
+			sqlite3_stmt *stmt;
+			int rc;
 
 			rc = sqlite3_open(db_path, &db);
 
@@ -136,50 +132,130 @@ void *sync_data_with_cloud_wrapper(void *args)
 
 	        fprintf(stderr, "Cannot open database: %s\n", sqlite3_errmsg(db));
 	        sqlite3_close(db);
+					return 1;
 	    }
-			else
-			{
-				memset(sql_query,0,sizeof(sql_query));
 
-				strcpy (sql_query, "select * from ");
-				strcat (sql_query, HX_MAIN_TABLE_NAME);
-				strcat (sql_query, " where sync_status = 0;");
 
-				sqlite3_prepare_v2(db, sql_query, -1, &stmt, NULL);
-				printf("Got results:\n");
-				while(sqlite3_step(stmt) != SQLITE_DONE) {
-						int i;
-						int cur_timestamp = sqlite3_column_int(stmt,2);
-						char *deviceID = sqlite3_column_text(stmt,3);
-						double data = sqlite3_column_double(stmt,4);
-						int data_quality = sqlite3_column_int(stmt,5);
+			memset(sql_query,0,sizeof(sql_query));
 
-						printf("timestamp=%d\n", cur_timestamp );
-						printf("deviceID= %s\n", deviceID);
-						if (check_raw_data_exist(cur_timestamp, deviceID) != 0)
-						{
-								printf("no data exists ok\n");
-						}
-						usleep(100000000);
+			strcpy (sql_query, "select * from ");
+			strcat (sql_query, HX_MAIN_TABLE_NAME);
+			strcat (sql_query, " where sync_status = 0;");
+
+			sqlite3_prepare_v2(db, sql_query, -1, &stmt, NULL);
+			printf("Got results:\n");
+			while(sqlite3_step(stmt) != SQLITE_DONE) {
+					char str_colID[20];
+					char *err_msg = 0;
+					int colID = sqlite3_column_int(stmt,0);
+					int cur_timestamp = sqlite3_column_int(stmt,2);
+				  char *deviceID = (char*)sqlite3_column_text(stmt,3);
+					double data = sqlite3_column_double(stmt,4);
+					int data_quality = sqlite3_column_int(stmt,5);
+					int sync_status = 0;
+					char str_sync_status[10];
+					printf("timestamp=%d\n", cur_timestamp );
+					printf("deviceID= %s\n", deviceID);
+
+					if (deviceID == NULL || colID == 0 || cur_timestamp ==0)
+					{
+						  DEBUG_PRINT3("no data to sync\n");
+							return 0;
+					}
+
+					if (sync_single_raw_data(cur_timestamp, deviceID, data, data_quality) == 0)
+					{
+							sync_status = 1;
+					}
+					else
+					{
+						sync_status = 0;
+					}
+							// mark data as updated
+					memset(sql_query,0,sizeof(sql_query));
+					memset(str_colID, 0, sizeof(str_colID));
+					sprintf(str_colID, "%d", colID);
+					strcpy (sql_query, "update ");
+					strcat (sql_query, HX_MAIN_TABLE_NAME);
+					strcat (sql_query, " set sync_status = ");
+					memset(str_sync_status, 0, sizeof(str_sync_status));
+					sprintf(str_sync_status, "%d", sync_status);
+					strcat (sql_query, str_sync_status);
+					strcat (sql_query, " where id=");
+					strcat (sql_query, str_colID);
+					strcat (sql_query, ";");
+
+					printf("update_query=%s\n", sql_query);
+					rc = sqlite3_exec(db, sql_query, 0, 0, &err_msg);
+
+
+			    if (rc != SQLITE_OK) {
+					fprintf(stderr, "Failed to update table\n");
+					fprintf(stderr, "SQL error: %s\n", err_msg);
+
+					sqlite3_free(err_msg);
+					return 1;
 				}
-
-				sqlite3_finalize(stmt);
-
-				sqlite3_close(db);
 			}
 
+			sqlite3_finalize(stmt);
 
+			sqlite3_close(db);
 
-			usleep(10000000);
-	}
+			return 0;
+
 }
 
-void *send_data_to_cloud_wrapper(void *args)
+void *db_data_handler(void *args)
 {
-	bridge *arguments = args;
+		bridge_data = (bridge *)args;
+		data_set_def *data_set;
+		int ret = 0;
+		int no_internet_count = 0;
+		while(1)
+		{
 
-	return (void *)send_sensor_data_to_cloud(arguments);
+				data_set = g_async_queue_pop(bridge_data->data_queue);
+				if (data_set != NULL)
+				{
+
+					printf("pop data: %d , ", data_set->timestamp);
+					printf("%s , ", data_set->id);
+					printf("%f , ", data_set->data);
+					printf("%d\n", data_set->data_code);
+
+					if (write_sqlite_hx_data(data_set) != 0)
+					{
+						fprintf(stderr, "write to local db error\n");
+					}
+
+					if (no_internet_count == 0)
+					{
+							ret = sync_hx_data();
+							if (ret != 0)
+							{
+								no_internet_count++;
+							}
+					}
+					else
+					{
+						no_internet_count++;
+
+						if (no_internet_count > NO_INTERNET_CHECK_FREQUENCY)
+						{
+							no_internet_count = 0;
+						}
+					}
+
+
+
+					g_free(data_set);
+				}
+		}
+
+
 }
+
 
 int recv_timeout(int s , int timeout, char *resp)
 {
@@ -221,10 +297,10 @@ int recv_timeout(int s , int timeout, char *resp)
         }
         else
         {
-			printf("chunk_size=%d\n",size_recv);
+			DEBUG_PRINT("chunk_size=%d\n",size_recv);
 			memcpy(resp + total_size, chunk, size_recv);
             total_size += size_recv;
-           // printf("%s" , chunk);
+           // DEBUG_PRINT("%s" , chunk);
             //reset beginning time
             gettimeofday(&begin , NULL);
         }
@@ -242,7 +318,7 @@ int send_http_request_to_dynamodb(char *http_request, int http_request_len, char
 	int sockfd, bytes, sent, total;
 //	char response[MAX_HTTP_RESPONSE_SIZE];
 
-	printf("Request:\n%s\n",http_request);
+	DEBUG_PRINT("Request:\n%s\n",http_request);
 
 
 	/* lookup the ip address */
@@ -280,11 +356,11 @@ int send_http_request_to_dynamodb(char *http_request, int http_request_len, char
 	}
 
 
-	printf("connected\n");
+	DEBUG_PRINT("connected\n");
 	/* send the request */
 	total = http_request_len;
 	sent = 0;
-	printf("sending messageing\n");
+	DEBUG_PRINT("sending messageing\n");
 	do {
 		bytes = write(sockfd,http_request + sent,total - sent);
 		if (bytes < 0)
@@ -292,7 +368,7 @@ int send_http_request_to_dynamodb(char *http_request, int http_request_len, char
 		if (bytes == 0)
 			break;
 		sent+=bytes;
-		printf("sent=%d\n",sent);
+		DEBUG_PRINT("sent=%d\n",sent);
 	} while (sent < total);
 
 	/* receive the response */
@@ -302,7 +378,7 @@ int send_http_request_to_dynamodb(char *http_request, int http_request_len, char
 	close(sockfd);
 
 	/* process response */
-	printf("Response:\n%s\n",http_response);
+	DEBUG_PRINT("Response:\n%s\n",http_response);
 
 	(*http_response_len) = total_recv;
 
@@ -339,15 +415,15 @@ int put_dynamodb_http_request(char *payload, int payload_len, char *http_request
 
 	strftime(time_date,sizeof(time_date),"%Y%m%d",tmp);
 
-	printf("time_date=%s\n",time_date);
+	DEBUG_PRINT("time_date=%s\n",time_date);
 
-	printf("time_full=%s\n",time_full);
+	DEBUG_PRINT("time_full=%s\n",time_full);
 
 	char SIG_FULL[100];
 	strcpy(SIG_FULL, AWS_SIG_START);
 	strcat(SIG_FULL, bridge_data->aws_secret_access_key);
 
-	printf("SIG_FULL = %s\n", SIG_FULL);
+	DEBUG_PRINT("SIG_FULL = %s\n", SIG_FULL);
 
 	td = mhash_hmac_init(MHASH_SHA256, (uint8_t*)SIG_FULL, strlen(SIG_FULL), mhash_get_hash_pblock(MHASH_SHA256));
 	mhash(td, time_date, strlen(time_date));
@@ -458,7 +534,7 @@ int put_dynamodb_http_request(char *payload, int payload_len, char *http_request
 		signature_ptr += sprintf(signature_ptr,"%02x",mac[j]);
 	}
 
-	printf("signature=%s\n",signature);
+	DEBUG_PRINT("signature=%s\n",signature);
 
 	char send_message[MAX_HTTP_REQUEST_SIZE];
 
@@ -496,731 +572,5 @@ int put_dynamodb_http_request(char *payload, int payload_len, char *http_request
 
 int send_payload_to_cloud(char *payload, int payload_len, char *response, int *response_len)
 {
-	return 0;
-}
-
-int get_def_from_cloud(bridge *data)
-{
-	int res = 0;
-
-	res = get_core_module_def_from_cloud(data);
-
-	res = get_sensors_def_from_clouud(data);
-
-	return res;
-}
-
-int get_sensors_def_from_clouud(bridge *data)
-{
-
-	int res = 0;
-
-	if (data->size_cm == 0)
-	{
-		g_print("no core module to read\n");
-		return 1;
-	}
-
-	int i = 0;
-
-	for (i = 0; i < data->size_cm; i++)
-	{
-		//reading
-		g_print("reading def: core module #%d\n",i);
-
-		if (get_sensors_def_from_single_core_module(data, i) != 0)
-		{
-			return -1;
-		}
-	}
-
-	return res;
-
-
-}
-int free_defs(bridge *data)
-{
-	if (data->size_sen != 0)
-	{
-		g_free(data->sen);
-	}
-
-	if (data->size_cm != 0)
-	{
-		uint8_t i = 0;
-		for(i = 0; i < data->size_cm; i++)
-		{
-			g_free(data->cm[i].sen);
-		}
-
-		g_free(data->cm);
-	}
-
-	return 0;
-
-}
-int get_sensors_def_from_single_core_module(bridge *data, int index)
-{
-	char payload[MAX_HTTP_REQUEST_SIZE];
-	char http_request[MAX_HTTP_REQUEST_SIZE];
-	char http_response[MAX_HTTP_RESPONSE_SIZE];
-	int http_request_len;
-	int http_response_len;
-	int i;
-	json_object *jobj_root = json_object_new_object();
-	json_object *jtable_name = json_object_new_string("Hx.DeviceConfiguration");
-
-	json_object *jfilterexp = json_object_new_string("LinkDeviceID = :val");
-
-	json_object *jcapacity = json_object_new_string("TOTAL");
-
-	json_object *jdevice_id = json_object_new_string(data->cm[index].addr);
-	json_object *jvalue = json_object_new_object();
-	json_object *jexpvalue = json_object_new_object();
-
-	json_object_object_add(jvalue,"S",jdevice_id);
-	json_object_object_add(jexpvalue,":val",jvalue);
-
-	json_object_object_add(jobj_root,"TableName",jtable_name);
-	json_object_object_add(jobj_root,"FilterExpression",jfilterexp);
-	json_object_object_add(jobj_root,"ExpressionAttributeValues",jexpvalue);
-	json_object_object_add(jobj_root,"ReturnConsumedCapacity",jcapacity);
-
-	sprintf(payload, "%s",json_object_to_json_string_ext(jobj_root, JSON_C_TO_STRING_PLAIN));
-
-	json_object_put(jobj_root);
-
-	int ipayloadlength = strlen(payload);
-
-//	printf("%s\n",payload);
-
-	if (put_dynamodb_http_request(payload, ipayloadlength, http_request, &http_request_len, AWSDB_SCAN) != 0)
-	{
-		return -1;
-	}
-
-	if (send_http_request_to_dynamodb(http_request, http_request_len, http_response, &http_response_len) != 0)
-	{
-		return -1;
-	}
-
-	char *date_pos,*http_pos,*json_start;
-
-	http_pos = strstr(http_response, "HTTP/1.1 200 OK");
-	date_pos = strstr(http_response, "Date:");
-	json_start = strstr(http_response, "{");
-	if (http_pos == NULL)
-	{
-		return -1;
-	}
-
-	if (date_pos == NULL)
-	{
-		return -1;
-	}
-
-
-	json_object * jobj = json_tokener_parse(json_start);
-	json_object_object_foreach(jobj, key, val) { /*Passing through every array element*/
-		if (strcmp(key, "Items") == 0)
-		{
-			printf("found Array\n");
-			json_object * jitems = val;
-			json_object * jitem;
-			int arraylen = json_object_array_length(jitems);
-
-			data->cm[index].index_sen = 0;
-			data->cm[index].size_sen= arraylen;
-			data->cm[index].sen = g_try_new0(sensor, arraylen);
-
-			printf("numbers of sensors=%d\n", arraylen);
-			for (i = 0; i < arraylen; i++)
-			{
-				jitem =  json_object_array_get_idx(jitems, i);
-
-				json_object *jtmp, *jtmp1;
-
-				if (json_object_object_get_ex(jitem,"DeviceID", &jtmp))
-				{
-					if (json_object_object_get_ex(jtmp,"S", &jtmp1))
-					{
-						data->cm[index].sen[i].size_err = 0;
-						g_stpcpy (data->cm[index].sen[i].addr,json_object_get_string(jtmp1));
-					}
-				}
-
-				if (json_object_object_get_ex(jitem,"TechDetail", &jtmp))
-				{
-					if (json_object_object_get_ex(jtmp,"S", &jtmp1))
-					{
-						if (strstr(json_object_get_string(jtmp1), "RS485_TSYS01") != NULL)
-						{
-							g_print("sensor #%d, is RS485\n", i);
-							data->cm[index].sen[i].proto = RS485;
-						}
-						else if (strstr(json_object_get_string(jtmp1), "ANALOG") != NULL)
-						{
-							g_print("sensor #%d, is ANALOG\n", i);
-							data->cm[index].sen[i].proto = ANALOG;
-						}
-
-					}
-				}
-			}
-
-		}
-    }
-
-	json_object_put(jobj);
-	return 0;
-
-}
-
-char *get_alert_msg(data_code_def err)
-{
-
-	switch(err)
-	{
-		case BLE_CONN_TIMEOUT:
-			return "BLE Connection Timeout";
-		case BLE_READ_ERR:
-			return "BLE Read Error";
-		case BLE_WRITE_ERR:
-			return "BLE Write Error";
-		case RS485_TSYS01_NO_RESPONSE:
-			return "RS485 Temperature Sensor No response";
-		case RS485_TSYS01_READ_ERR:
-			return "RS485 Temperature Sensor Read Error";
-		case RS485_TSYS01_WRITE_ERR:
-			return "RS485 Temperature Sensor Write Error";
-		case RS485_TSYS01_ADDRESS_VERIFY_ERR:
-			return "RS485 Temperature Sensor Address Error";
-		default:
-			return "Undefined Error";
-	}
-}
-
-int update_device_status(bridge *data)
-{
-//	int i,j,k;
-	char payload[MAX_HTTP_REQUEST_SIZE];
-	char http_request[MAX_HTTP_REQUEST_SIZE];
-	char http_response[MAX_HTTP_RESPONSE_SIZE];
-	int http_request_len;
-	int http_response_len;
-//	int payload_size;
-//	char buffer[50];
-
-
-
-
-	json_object *jobj_root = json_object_new_object();
-
-	json_object *jobj_table = json_object_new_string("Hx.DeviceConfiguration");
-
-
-
-	json_object *jobj_key = json_object_new_object();
-
-	json_object *jobj_deviceid = json_object_new_object();
-	json_object *jobj_deviceid_str = json_object_new_string("02A001");
-
-	json_object *jobj_type = json_object_new_object();
-	json_object *jobj_type_str = json_object_new_string("Temperature");
-
-	json_object *jobj_update_exp = json_object_new_string("set DeviceStatus = :val1");
-
-	json_object *jobj_exp_attr = json_object_new_object();
-
-	json_object *jobj_exp_attr_item = json_object_new_object();
-
-	json_object *jobj_exp_attr_item_str = json_object_new_string("OK");
-
-	json_object *jobj_return_value =  json_object_new_string("ALL_NEW");
-
-	json_object_object_add(jobj_root,"TableName",jobj_table);
-	json_object_object_add(jobj_deviceid,"S",jobj_deviceid_str);
-	json_object_object_add(jobj_type,"S",jobj_type_str);
-	json_object_object_add(jobj_key,"DeviceID",jobj_deviceid);
-	json_object_object_add(jobj_key,"Type",jobj_type);
-
-	json_object_object_add(jobj_root,"Key",jobj_key);
-
-	json_object_object_add(jobj_root,"UpdateExpression",jobj_update_exp);
-
-	json_object_object_add(jobj_exp_attr_item,"S",jobj_exp_attr_item_str);
-	json_object_object_add(jobj_exp_attr,":val1",jobj_exp_attr_item);
-
-	json_object_object_add(jobj_root,"ExpressionAttributeValues",jobj_exp_attr);
-
-	json_object_object_add(jobj_root,"ReturnValues",jobj_return_value);
-
-
-	sprintf(payload, "%s",json_object_to_json_string_ext(jobj_root, JSON_C_TO_STRING_PLAIN));
-
-	int ipayloadlength = strlen(payload);
-
-	g_print("**************************************************\n");
-	g_print("*********************UPDATE ITEM **************************\n");
-	printf("%s\n",payload);
-	g_print("**************************************************\n");
-	g_print("*********************UPDATE ITEM ************************\n");
-	json_object_put(jobj_root);
-	memset(http_request,0,sizeof(http_request));
-	http_request_len = 0;
-
-	if (put_dynamodb_http_request(payload, ipayloadlength, http_request, &http_request_len, AWSDB_UPDATE_ITEM) != 0)
-	{
-		return -1;
-	}
-
-	memset(http_response,0,sizeof(http_response));
-	http_response_len = 0;
-
-	if (send_http_request_to_dynamodb(http_request, http_request_len, http_response, &http_response_len) != 0)
-	{
-		return -1;
-	}
-
-
-
-	return 0;
-
-}
-
-int send_alert_to_cloud(bridge *data)
-{
-	int i,j,k;
-	char payload[MAX_HTTP_REQUEST_SIZE];
-	char http_request[MAX_HTTP_REQUEST_SIZE];
-	char http_response[MAX_HTTP_RESPONSE_SIZE];
-	int http_request_len;
-	int http_response_len;
-//	int payload_size;
-	char buffer[50];
-
-	json_object *jobj_root = json_object_new_object();
-	json_object *jobj_table = json_object_new_object();
-	json_object *jdataarray = json_object_new_array();
-
-	for (i = 0; i < data->size_cm; i++)
-	{
-		for (j = 0; j < data->cm[i].size_err;j++)
-		{
-			json_object *jone_set_request = json_object_new_object();
-			json_object *jsingle_put_request = json_object_new_object();
-			json_object *jsingle_item = json_object_new_object();
-
-			json_object *jdevice_id = json_object_new_object();
-
-			json_object *jdevice_id_str = json_object_new_string(data->cm[i].addr);
-			json_object_object_add(jdevice_id,"S",jdevice_id_str);
-
-			memset(buffer,0,sizeof(buffer));
-			sprintf(buffer,"%d",data->current_timestamp);
-
-			json_object *jtime = json_object_new_object();
-
-			json_object *jtime_str = json_object_new_string(buffer);
-			json_object_object_add(jtime,"N",jtime_str);
-
-
-			memset(buffer,0,sizeof(buffer));
-			sprintf(buffer,"%s",get_alert_msg(data->cm[i].err_list[j]));
-
-			json_object *jvalue = json_object_new_object();
-
-			json_object *jvalue_str = json_object_new_string(buffer);
-			json_object_object_add(jvalue,"S",jvalue_str);
-
-
-
-			json_object_object_add(jsingle_item,"DeviceID",jdevice_id);
-			json_object_object_add(jsingle_item,"EpochTimeStamp",jtime);
-			json_object_object_add(jsingle_item,"ErrorMessage",jvalue);
-
-			json_object_object_add(jsingle_put_request,"Item",jsingle_item);
-			json_object_object_add(jone_set_request,"PutRequest",jsingle_put_request);
-
-			json_object_array_add(jdataarray, jone_set_request);
-
-		}
-	}
-
-
-	for (i = 0; i < data->size_cm; i++)
-	{
-		for (j = 0; j < data->cm[i].size_sen; j++)
-		{
-			for (k = 0; k < data->cm[i].sen[j].size_err;k++)
-			{
-				json_object *jone_set_request = json_object_new_object();
-				json_object *jsingle_put_request = json_object_new_object();
-				json_object *jsingle_item = json_object_new_object();
-
-				json_object *jdevice_id = json_object_new_object();
-
-				json_object *jdevice_id_str = json_object_new_string(data->cm[i].sen[j].addr);
-				json_object_object_add(jdevice_id,"S",jdevice_id_str);
-
-				memset(buffer,0,sizeof(buffer));
-				sprintf(buffer,"%d",data->current_timestamp);
-
-				json_object *jtime = json_object_new_object();
-
-				json_object *jtime_str = json_object_new_string(buffer);
-				json_object_object_add(jtime,"N",jtime_str);
-
-
-				memset(buffer,0,sizeof(buffer));
-				sprintf(buffer,"%s",get_alert_msg(data->cm[i].sen[j].err_list[k]));
-
-				json_object *jvalue = json_object_new_object();
-
-				json_object *jvalue_str = json_object_new_string(buffer);
-				json_object_object_add(jvalue,"S",jvalue_str);
-
-
-
-				json_object_object_add(jsingle_item,"DeviceID",jdevice_id);
-				json_object_object_add(jsingle_item,"EpochTimeStamp",jtime);
-				json_object_object_add(jsingle_item,"ErrorMessage",jvalue);
-
-				json_object_object_add(jsingle_put_request,"Item",jsingle_item);
-				json_object_object_add(jone_set_request,"PutRequest",jsingle_put_request);
-
-				json_object_array_add(jdataarray, jone_set_request);
-
-			}
-
-
-		}
-	//	uuid_generate_random(uuid);
-
-        // unparse (to string)
-        //char uuid_str[37];      // ex. "1b4e28ba-2fa1-11d2-883f-0016d3cca427" + "\0"
-        //uuid_unparse_lower(uuid, uuid_str);
-       // printf("generate uuid=%s\n", uuid_str);
-
-
-	}
-
-	json_object_object_add(jobj_table,"Hx.Alerts", jdataarray);
-	json_object_object_add(jobj_root,"RequestItems", jobj_table);
-
-	json_object *jcapacity = json_object_new_string("TOTAL");
-	json_object_object_add(jobj_root,"ReturnConsumedCapacity", jcapacity);
-
-	sprintf(payload, "%s",json_object_to_json_string_ext(jobj_root, JSON_C_TO_STRING_PLAIN));
-
-	int ipayloadlength = strlen(payload);
-
-	g_print("**************************************************\n");
-	g_print("*********************ALERT **************************\n");
-	printf("%s\n",payload);
-	g_print("**************************************************\n");
-	g_print("*********************ALERT ************************\n");
-	json_object_put(jobj_root);
-	memset(http_request,0,sizeof(http_request));
-	http_request_len = 0;
-
-	if (put_dynamodb_http_request(payload, ipayloadlength, http_request, &http_request_len, AWSDB_BATCH_WRITE_ITEM) != 0)
-	{
-		return -1;
-	}
-
-	memset(http_response,0,sizeof(http_response));
-	http_response_len = 0;
-
-	if (send_http_request_to_dynamodb(http_request, http_request_len, http_response, &http_response_len) != 0)
-	{
-		return -1;
-	}
-
-	return 0;
-}
-
-int get_core_module_def_from_cloud(bridge *data)
-{
-	char payload[MAX_HTTP_REQUEST_SIZE];
-	char http_request[MAX_HTTP_REQUEST_SIZE];
-	char http_response[MAX_HTTP_RESPONSE_SIZE];
-	int http_request_len;
-	int http_response_len;
-	char ble_buffer[MAX_BLE_ADDR], addr_buffer[MAX_SENSOR_ADDR];
-	int i;
-	json_object *jobj_root = json_object_new_object();
-	json_object *jtable_name = json_object_new_string("Hx.DeviceConfiguration");
-
-	json_object *jfilterexp = json_object_new_string("LinkDeviceID = :val");
-
-	json_object *jcapacity = json_object_new_string("TOTAL");
-
-	json_object *jdevice_id = json_object_new_string(BRIDGE_SERIAL_NUM);
-	json_object *jvalue = json_object_new_object();
-	json_object *jexpvalue = json_object_new_object();
-
-	json_object_object_add(jvalue,"S",jdevice_id);
-	json_object_object_add(jexpvalue,":val",jvalue);
-
-	json_object_object_add(jobj_root,"TableName",jtable_name);
-	json_object_object_add(jobj_root,"FilterExpression",jfilterexp);
-	json_object_object_add(jobj_root,"ExpressionAttributeValues",jexpvalue);
-	json_object_object_add(jobj_root,"ReturnConsumedCapacity",jcapacity);
-
-	sprintf(payload, "%s",json_object_to_json_string_ext(jobj_root, JSON_C_TO_STRING_PLAIN));
-
-	json_object_put(jobj_root);
-
-	int ipayloadlength = strlen(payload);
-
-//	printf("%s\n",payload);
-
-	put_dynamodb_http_request(payload, ipayloadlength, http_request, &http_request_len, AWSDB_SCAN);
-
-	if (send_http_request_to_dynamodb(http_request, http_request_len, http_response, &http_response_len) != 0)
-	{
-		return -1;
-	}
-	char *date_pos,*http_pos,*json_start;
-
-	http_pos = strstr(http_response, "HTTP/1.1 200 OK");
-	date_pos = strstr(http_response, "Date:");
-	json_start = strstr(http_response, "{");
-	if (http_pos == NULL)
-	{
-		return -1;
-	}
-
-	if (date_pos == NULL)
-	{
-		return -1;
-	}
-
-	json_object * jobj = json_tokener_parse(json_start);
-	//int num_core = 0;
-	json_object_object_foreach(jobj, key, val) { /*Passing through every array element*/
-		if (strcmp(key, "Items") == 0)
-		{
-			printf("found Array\n");
-			json_object * jitems = val;
-			json_object * jitem;
-			int arraylen = json_object_array_length(jitems);
-
-
-			data->cm = g_try_new0(core_module, arraylen);
-			data->index_cm = 0;
-			data->size_cm = arraylen;
-
-
-
-			printf("numbers of core_module=%d\n", arraylen);
-			for (i = 0; i < arraylen; i++)
-			{
-				jitem =  json_object_array_get_idx(jitems, i);
-
-				json_object *jble_addr_root, *jble_addr_value, *jaddr_root, *jaddr_value;
-
-				if (json_object_object_get_ex(jitem,"Bluetooth_Address", &jble_addr_root))
-				{
-					if (json_object_object_get_ex(jble_addr_root,"S", &jble_addr_value))
-					{
-						memset(ble_buffer,0,sizeof(ble_buffer));
-						g_stpcpy(ble_buffer, json_object_get_string(jble_addr_value));
-
-					}
-				}
-
-				if (json_object_object_get_ex(jitem,"DeviceID", &jaddr_root))
-				{
-					if (json_object_object_get_ex(jaddr_root,"S", &jaddr_value))
-					{
-						memset(addr_buffer,0,sizeof(addr_buffer));
-						g_stpcpy(addr_buffer, json_object_get_string(jaddr_value));
-					}
-				}
-				data->cm[i].size_err = 0;
-			//	g_print("addr_buffer=%s\n",addr_buffer);
-
-				memcpy(data->cm[i].addr, addr_buffer, sizeof(addr_buffer));
-				//g_stpcpy (data->cm[i].addr,addr_buffer);
-
-			//	g_print("ble_buffer=%s\n",ble_buffer);
-
-				memcpy(data->cm[i].ble_addr, ble_buffer, sizeof(ble_buffer));
-				//g_stpcpy (data->cm[i].ble_addr,ble_buffer);
-
-			}
-
-		}
-    }
-	json_object_put(jobj);
-	g_print("*******START LIST OF CORE_MODULE*********\n");
-	for(i = 0; i < data->size_cm; i++)
-	{
-
-		g_print("Core Moudle #%d \n", i);
-		g_print("DeviceID=%s\n",data->cm[i].addr);
-		g_print("BLE_ADDR=%s\n",data->cm[i].ble_addr);
-
-	}
-	g_print("*******END LIST OF CORE_MODULE*********\n");
-
-
-	return 0;
-}
-
-int send_sensor_data_to_cloud(bridge *data)
-{
-        // generate
-	int i,j;
-	char payload[MAX_HTTP_REQUEST_SIZE];
-	char http_request[MAX_HTTP_REQUEST_SIZE];
-	char http_response[MAX_HTTP_RESPONSE_SIZE];
-	int http_request_len;
-	int http_response_len;
-//	int payload_size;
-	char buffer[50];
-
-	json_object *jobj_root = json_object_new_object();
-	json_object *jobj_table = json_object_new_object();
-	json_object *jdataarray = json_object_new_array();
-
-
-
-	for (i = 0; i < data->size_cm; i++)
-	{
-		for (j = 0; j < data->cm[i].size_sen; j++)
-		{
-			json_object *jone_set_request = json_object_new_object();
-			json_object *jsingle_put_request = json_object_new_object();
-			json_object *jsingle_item = json_object_new_object();
-
-			json_object *jdevice_id = json_object_new_object();
-
-			json_object *jdevice_id_str = json_object_new_string(data->cm[i].sen[j].addr);
-			json_object_object_add(jdevice_id,"S",jdevice_id_str);
-
-			memset(buffer,0,sizeof(buffer));
-			sprintf(buffer,"%d",data->current_timestamp);
-
-			json_object *jtime = json_object_new_object();
-
-			json_object *jtime_str = json_object_new_string(buffer);
-			json_object_object_add(jtime,"N",jtime_str);
-
-
-			memset(buffer,0,sizeof(buffer));
-			sprintf(buffer,"%f",data->cm[i].sen[j].data);
-
-			json_object *jvalue = json_object_new_object();
-
-			json_object *jvalue_str = json_object_new_string(buffer);
-			json_object_object_add(jvalue,"N",jvalue_str);
-
-
-
-			json_object_object_add(jsingle_item,"DeviceID",jdevice_id);
-			json_object_object_add(jsingle_item,"EpochTimeStamp",jtime);
-			json_object_object_add(jsingle_item,"Value",jvalue);
-
-			json_object_object_add(jsingle_put_request,"Item",jsingle_item);
-			json_object_object_add(jone_set_request,"PutRequest",jsingle_put_request);
-
-			json_object_array_add(jdataarray, jone_set_request);
-
-		}
-	//	uuid_generate_random(uuid);
-
-        // unparse (to string)
-        //char uuid_str[37];      // ex. "1b4e28ba-2fa1-11d2-883f-0016d3cca427" + "\0"
-        //uuid_unparse_lower(uuid, uuid_str);
-       // printf("generate uuid=%s\n", uuid_str);
-
-
-	}
-
-	json_object_object_add(jobj_table,"Hx.RawData", jdataarray);
-	json_object_object_add(jobj_root,"RequestItems", jobj_table);
-
-	json_object *jcapacity = json_object_new_string("TOTAL");
-	json_object_object_add(jobj_root,"ReturnConsumedCapacity", jcapacity);
-
-	sprintf(payload, "%s",json_object_to_json_string_ext(jobj_root, JSON_C_TO_STRING_PLAIN));
-
-	int ipayloadlength = strlen(payload);
-
-//	printf("%s\n",payload);
-	json_object_put(jobj_root);
-
-	if (put_dynamodb_http_request(payload, ipayloadlength, http_request, &http_request_len, AWSDB_BATCH_WRITE_ITEM) != 0)
-	{
-		return -1;
-	}
-
-	if (send_http_request_to_dynamodb(http_request, http_request_len, http_response, &http_response_len) != 0)
-	{
-		return -1;
-	}
-
-
-	json_object *jobj_root_calData = json_object_new_object();
-	json_object *jobj_table_calData = json_object_new_string("Hx.PendingCalculation");
-
-	json_object *jput_item = json_object_new_object();
-
-	json_object *jasset_id = json_object_new_object();
-
-	json_object *jasset_id_str = json_object_new_string(ASSETID);
-
-	json_object_object_add(jasset_id,"S",jasset_id_str);
-
-	memset(buffer,0,sizeof(buffer));
-	sprintf(buffer,"%d",data->current_timestamp);
-
-	json_object *j_cur_time = json_object_new_object();
-
-	json_object *j_cur_time_str = json_object_new_string(buffer);
-	json_object_object_add(j_cur_time,"N",j_cur_time_str);
-
-	json_object *jpriority = json_object_new_object();
-
-	json_object *jpriority_str = json_object_new_string("1");
-
-	json_object_object_add(jpriority,"N",jpriority_str);
-
-	json_object_object_add(jput_item,"AssetID", jasset_id);
-	json_object_object_add(jput_item,"EpochTimeStamp", j_cur_time);
-	json_object_object_add(jput_item,"Priority", jpriority);
-
-	json_object_object_add(jobj_root_calData,"TableName", jobj_table_calData);
-	json_object_object_add(jobj_root_calData,"Item", jput_item);
-
-	memset(payload,0,sizeof(payload));
-	sprintf(payload, "%s",json_object_to_json_string_ext(jobj_root_calData, JSON_C_TO_STRING_PLAIN));
-
-	ipayloadlength = strlen(payload);
-
-//	printf("%s\n",payload);
-	json_object_put(jobj_root_calData);
-	memset(http_request,0,sizeof(http_request));
-
-	if (put_dynamodb_http_request(payload, ipayloadlength, http_request, &http_request_len, AWSDB_PUT_ITEM) != 0)
-	{
-		return -1;
-	}
-
-	memset(http_response,0,sizeof(http_response));
-	if (send_http_request_to_dynamodb(http_request, http_request_len, http_response, &http_response_len) != 0)
-	{
-		return -1;
-	}
-
-
-
-//	send_alert_to_cloud(data);
-
-//	update_device_status(data);
-
 	return 0;
 }

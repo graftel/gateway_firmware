@@ -139,12 +139,18 @@ typedef enum {
 
 typedef struct
 {
-	char 			addr[MAX_SENSOR_ADDR];
-	double		    data;
-  data_code_def       data_code;
+  char            id[MAX_SENSOR_ADDR];
+  double          data;
+  data_code_def   data_code;
+  int             timestamp;
+} data_set_def;
+
+typedef struct
+{
+	char 			      addr[MAX_SENSOR_ADDR];
+	double		      data;
+  data_code_def   data_code;
 	comm_protocol   proto;
-	int				err_list[MAX_ERROR_MSG];
-	int				size_err;
 } sensor;
 
 typedef struct
@@ -180,11 +186,10 @@ typedef struct
 	char		  aws_secret_access_key[MAX_SECRET_LEN];
 	//Sensors:
 	core_module  	*cm;
+  GAsyncQueue    *data_queue;
+  int       queue_lock;
 	int				size_cm;
 	int				index_cm;
-	sensor 			*sen;
-	int				size_sen;
-	int				index_sen;
 
 	int				err_list[MAX_ERROR_MSG];
 	int				size_err;

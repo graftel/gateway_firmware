@@ -3,37 +3,13 @@
 
 char sql_query[500];
 char buffer[50];
-int main_table_exist = 0;
 //int write_values(hx_data *user_hx_data)
-int callback_table_exist(void *NotUsed, int argc, char **argv,
-                    char **azColName) {
 
-    NotUsed = 0;
-    int i;
-    for (i = 0; i < argc; i++) {
-
-    		if (strcmp(argv[i],"1") == 0)
-    		{
-    			main_table_exist = 1;
-    			return 0;
-    		}
-    }
-
-    return 0;
-}
-
-void *write_sqlite_hx_data_wrapper(void *data)
-{
-  bridge *user_data = (bridge *)data;
-
-  return (void *)write_sqlite_hx_data(user_data);
-}
-
-int write_sqlite_hx_data(bridge *user_data)
+int write_sqlite_hx_data(data_set_def *data_set)
 {
    sqlite3 *db;
    char *err_msg = 0;
-   int rc,i,j;
+   int rc;
 
    struct stat st = {0};
    char db_path[100];
@@ -49,34 +25,12 @@ int write_sqlite_hx_data(bridge *user_data)
    rc = sqlite3_open(db_path, &db);
 
    if( rc ){
-      fprintf(stderr, "Can't open database: %s\n", sqlite3_errmsg(db));
+      fprintf(stderr, "local db: Can't open database: %s\n", sqlite3_errmsg(db));
       return 1;
    }
 
-   memset(sql_query,0,sizeof(sql_query));
-
-   strcpy (sql_query, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='");
-   strcat (sql_query, HX_MAIN_TABLE_NAME);
-   strcat (sql_query, "';");
-
-//   printf("sql query=%s\n",sql_query);
-
-   rc = sqlite3_exec(db, sql_query, callback_table_exist, 0, &err_msg);
-
-   if (rc != SQLITE_OK) {
-	    fprintf(stderr, "Failed to select data\n");
-        fprintf(stderr, "SQL error: %s\n", err_msg);
-
-        sqlite3_free(err_msg);
-        sqlite3_close(db);
-
-        return 1;
-   }
-
-   if (main_table_exist == 0){
-	   main_table_exist = 1;
 	   memset(sql_query,0,sizeof(sql_query));
-	   strcpy (sql_query, "CREATE TABLE ");
+	   strcpy (sql_query, "CREATE TABLE if not exists ");
 	   strcat (sql_query, HX_MAIN_TABLE_NAME);
 	   strcat (sql_query, "(\
 					    id 				integer    primary key autoincrement\
@@ -100,57 +54,47 @@ int write_sqlite_hx_data(bridge *user_data)
 
 			return 1;
 		}
-   }
-
-   for (i = 0; i < user_data->size_cm; i++)
-   {
-       for (j = 0; j < user_data->cm[i].size_sen; j++)
-       {
-
-           memset(sql_query,0,sizeof(sql_query));
-           strcpy (sql_query, "INSERT INTO ");
-           strcat (sql_query, HX_MAIN_TABLE_NAME);
-           strcat (sql_query, " (data_time_stamp,deviceID,data,data_quality,sync_status) VALUES(");
-
-           // Time stamp
-           memset(buffer,0,sizeof(buffer));
-           sprintf(buffer,"%d",user_data->current_timestamp);
-           strcat (sql_query, buffer);
-           strcat (sql_query, ",'");
-           // Device ID
-           strcat (sql_query, user_data->cm[i].sen[j].addr);
-           strcat (sql_query, "',");
-           // Data
-           memset(buffer,0,sizeof(buffer));
-           sprintf(buffer,"%f",user_data->cm[i].sen[j].data);
-           strcat (sql_query, buffer);
-           strcat (sql_query, ",");
-
-           // Data code && sync status
-           memset(buffer,0,sizeof(buffer));
-           sprintf(buffer,"%d",(int)user_data->cm[i].sen[j].data_code);
-           strcat (sql_query, buffer);
-           strcat (sql_query, ",0);");
-
-           DEBUG_PRINT3("insert query:%s\n",sql_query);
-
-           rc = sqlite3_exec(db, sql_query, 0, 0, &err_msg);
-
-           if (rc != SQLITE_OK) {
-             fprintf(stderr, "Failed to insert value\n");
-             fprintf(stderr, "SQL error: %s\n", err_msg);
-
-             sqlite3_free(err_msg);
-             sqlite3_close(db);
-
-             return 1;
-          }
 
 
-       }
-   }
+     memset(sql_query,0,sizeof(sql_query));
+     strcpy (sql_query, "INSERT INTO ");
+     strcat (sql_query, HX_MAIN_TABLE_NAME);
+     strcat (sql_query, " (data_time_stamp,deviceID,data,data_quality,sync_status) VALUES(");
 
-	DEBUG_PRINT3("*********write to SQL finish************\n");
+     // Time stamp
+     memset(buffer,0,sizeof(buffer));
+     sprintf(buffer,"%d",data_set->timestamp);
+     strcat (sql_query, buffer);
+     strcat (sql_query, ",'");
+     // Device ID
+     strcat (sql_query, data_set->id);
+     strcat (sql_query, "',");
+     // Data
+     memset(buffer,0,sizeof(buffer));
+     sprintf(buffer,"%f",data_set->data);
+     strcat (sql_query, buffer);
+     strcat (sql_query, ",");
+
+     // Data code && sync status
+     memset(buffer,0,sizeof(buffer));
+     sprintf(buffer,"%d",(int)data_set->data_code);
+     strcat (sql_query, buffer);
+     strcat (sql_query, ",0);");
+
+     DEBUG_PRINT3("insert query:%s\n",sql_query);
+
+     rc = sqlite3_exec(db, sql_query, 0, 0, &err_msg);
+
+     if (rc != SQLITE_OK) {
+       fprintf(stderr, "Failed to insert value\n");
+       fprintf(stderr, "SQL error: %s\n", err_msg);
+
+       sqlite3_free(err_msg);
+       sqlite3_close(db);
+
+       return 1;
+    }
+
 
   sqlite3_close(db);
 

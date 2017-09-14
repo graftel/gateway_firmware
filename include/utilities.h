@@ -38,4 +38,6 @@ int file_exists(const char *fname);
 
 int load_config(bridge *bridge_data);
 
+int free_defs(bridge *data);
+
 #endif

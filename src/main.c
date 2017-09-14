@@ -8,7 +8,7 @@
 int start_time,current_time; // test
 int interval = 10; // seconds
 int status = 0;
-int i = 0;
+int i = 0, j;
 static bridge bridge_data;
 //static int running_cycle = 0;
 GThread *thread_localdb, *sync_db;
@@ -25,6 +25,8 @@ gboolean timeout_callback(gpointer data)
     if ((current_time - start_time) % interval == 0)
     {
 				//start collecting data based on config file
+
+				data_set_def *data_set;
 				bridge_data.current_timestamp = current_time;
 				for (i = 0; i < bridge_data.size_cm; i++)
 				{
@@ -34,13 +36,31 @@ gboolean timeout_callback(gpointer data)
 					{
             ble_data_acq(cur_cm);
 					}
-					else if (cur_cm->protocol == CM_RS485)
-					{
+//					else if (cur_cm->protocol == CM_RS485)
+//					{
 
-					}
+//					}
+
+						for (j = 0; j < cur_cm->size_sen; j++)
+						{
+								data_set = NULL;
+								data_set = g_try_new0(data_set_def, 1);
+								data_set->data = cur_cm->sen[j].data;
+								data_set->data_code = cur_cm->sen[j].data_code;
+								data_set->timestamp = current_time;
+								strcpy(data_set->id, cur_cm->sen[j].addr);
+								printf("data pushed to tail: %d, %s, %f, %d\n", data_set->timestamp, data_set->id, data_set->data, data_set->data_code);
+
+								g_async_queue_push(bridge_data.data_queue, data_set);
+						}
+
+
 
 				}
-				thread_localdb = g_thread_try_new("LOCAL_DB_TH", (GThreadFunc)write_sqlite_hx_data_wrapper, (gpointer)&bridge_data, &err1);
+				// done acquire data, put data into queue
+
+
+				//thread_localdb = g_thread_try_new("LOCAL_DB_TH", (GThreadFunc)write_sqlite_hx_data_wrapper, (gpointer)&bridge_data, &err1);
 				// save all data to local db thread
 				if (err1 != NULL)
 				{
@@ -115,7 +135,7 @@ int main()
 //	MCP79410_Read_Epoch_Time(&start_time);
 
 	DEBUG_PRINT("start_time=%d\n",start_time);
-	sync_db = g_thread_try_new("SYNC_DB_TH", (GThreadFunc)sync_data_with_cloud_wrapper, (gpointer)&bridge_data, &err1);
+	sync_db = g_thread_try_new("DB_TH", (GThreadFunc)db_data_handler, (gpointer)&bridge_data, &err1);
 
   loop = g_main_loop_new ( NULL , FALSE );
   // add source to default context

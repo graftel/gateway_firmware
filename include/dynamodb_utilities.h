@@ -19,19 +19,15 @@
 #include <json-c/json.h>
 #include <glib.h>
 #include <defines.h>
+#define NO_INTERNET_CHECK_FREQUENCY 100  // every data points
+#define LOCAL_DB_SYNC_TABLE_NAME "SYNC"
 
-void *send_data_to_cloud_wrapper(void *args);
 int recv_timeout(int s , int timeout, char *resp);
 int send_http_request_to_dynamodb(char *http_request, int http_request_len, char *http_response, int *http_response_len);
 int put_dynamodb_http_request(char *payload, int payload_len, char *http_request, int *http_request_len, aws_request_num num);
-int get_def_from_cloud(bridge *data);
-int get_sensors_def_from_single_core_module(bridge *data, int index);
-char *get_alert_msg(data_code_def err);
-int send_alert_to_cloud(bridge *data);
-int get_core_module_def_from_cloud(bridge *data);
-int send_sensor_data_to_cloud(bridge *data);
-int free_defs(bridge *data);
 
+
+void *db_data_handler(void *args);
 void *sync_data_with_cloud_wrapper(void *args);
 
 #endif

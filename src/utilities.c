@@ -82,7 +82,6 @@ int resolve_ip(char *host_name, struct addrinfo *addr)
     hints.ai_flags = 0;
     hints.ai_protocol = 0;          /* Any protocol */
 
-	printf("host_name=%s\n",host_name);
     s = getaddrinfo(host_name, "http", &hints, &result);
     if (s != 0) {
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(s));
@@ -102,23 +101,17 @@ int resolve_ip(char *host_name, struct addrinfo *addr)
 
 	   if (connect(sfd, rp->ai_addr, rp->ai_addrlen) == 0)
 		{
-			printf("debug 1\n");
 		   memcpy(addr, rp, sizeof(struct addrinfo));
-		   printf("debug 2\n");
 		   break;                  /* Success */
 	   }
    }
-	printf("debug 3\n");
    if (rp == NULL) {               /* No address succeeded */
 	   fprintf(stderr, "Could not connect\n");
 	   close(sfd);
 	   return -1;
    }
-	printf("debug 4\n");
    freeaddrinfo(result);           /* No longer needed */
-   printf("debug 5\n");
    close(sfd);
-   printf("debug 6\n");
    return 0;
 }
 
@@ -167,7 +160,7 @@ int file_exists(const char *fname)
 int load_config(bridge *bridge_data)
 {
 	int i,j;
-	char *config_path = "/etc/hxgateway/config.json";
+	char *config_path = "/etc/hxmonitor/config.json";
 
 	if (file_exists(config_path) == 0)
 	{
@@ -308,6 +301,28 @@ for(i = 0; i < bridge_data->size_cm; i++)
 
 	fclose(fp);
 	free(buffer);
+
+	bridge_data->data_queue = g_async_queue_new();
+	bridge_data->queue_lock = 0;
+	return 0;
+
+}
+
+
+int free_defs(bridge *data)
+{
+	g_async_queue_unref(data->data_queue);
+
+	if (data->size_cm != 0)
+	{
+		uint8_t i = 0;
+		for(i = 0; i < data->size_cm; i++)
+		{
+			g_free(data->cm[i].sen);
+		}
+
+		g_free(data->cm);
+	}
 
 	return 0;
 
