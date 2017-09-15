@@ -7,6 +7,8 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/time.h>
+#include <sys/ioctl.h>
+#include <net/if.h>   //ifreq
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <errno.h>
@@ -17,6 +19,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <glib.h>
+
 
 uint8_t singlechar2hex(char din);
 

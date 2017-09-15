@@ -152,8 +152,6 @@ int sync_hx_data()
 				  char *deviceID = (char*)sqlite3_column_text(stmt,3);
 					double data = sqlite3_column_double(stmt,4);
 					int data_quality = sqlite3_column_int(stmt,5);
-					int sync_status = 0;
-					char str_sync_status[10];
 					printf("timestamp=%d\n", cur_timestamp );
 					printf("deviceID= %s\n", deviceID);
 
@@ -165,37 +163,35 @@ int sync_hx_data()
 
 					if (sync_single_raw_data(cur_timestamp, deviceID, data, data_quality) == 0)
 					{
-							sync_status = 1;
+						// mark data as updated
+							memset(sql_query,0,sizeof(sql_query));
+							memset(str_colID, 0, sizeof(str_colID));
+							sprintf(str_colID, "%d", colID);
+							strcpy (sql_query, "update ");
+							strcat (sql_query, HX_MAIN_TABLE_NAME);
+							strcat (sql_query, " set sync_status = 1 ");
+							strcat (sql_query, " where id=");
+							strcat (sql_query, str_colID);
+							strcat (sql_query, ";");
+
+							printf("update_query=%s\n", sql_query);
+							rc = sqlite3_exec(db, sql_query, 0, 0, &err_msg);
+
+
+							if (rc != SQLITE_OK) {
+							fprintf(stderr, "Failed to update table\n");
+							fprintf(stderr, "SQL error: %s\n", err_msg);
+
+							sqlite3_free(err_msg);
+							return 1;
+						}
 					}
 					else
 					{
-						sync_status = 0;
+						fprintf(stderr, "sync failed, possibly no internet\n");
+						return 2;
 					}
-							// mark data as updated
-					memset(sql_query,0,sizeof(sql_query));
-					memset(str_colID, 0, sizeof(str_colID));
-					sprintf(str_colID, "%d", colID);
-					strcpy (sql_query, "update ");
-					strcat (sql_query, HX_MAIN_TABLE_NAME);
-					strcat (sql_query, " set sync_status = ");
-					memset(str_sync_status, 0, sizeof(str_sync_status));
-					sprintf(str_sync_status, "%d", sync_status);
-					strcat (sql_query, str_sync_status);
-					strcat (sql_query, " where id=");
-					strcat (sql_query, str_colID);
-					strcat (sql_query, ";");
 
-					printf("update_query=%s\n", sql_query);
-					rc = sqlite3_exec(db, sql_query, 0, 0, &err_msg);
-
-
-			    if (rc != SQLITE_OK) {
-					fprintf(stderr, "Failed to update table\n");
-					fprintf(stderr, "SQL error: %s\n", err_msg);
-
-					sqlite3_free(err_msg);
-					return 1;
-				}
 			}
 
 			sqlite3_finalize(stmt);
@@ -311,22 +307,14 @@ int recv_timeout(int s , int timeout, char *resp)
 
 int send_http_request_to_dynamodb(char *http_request, int http_request_len, char *http_response, int *http_response_len){
 
-//	int portno =        AWS_PORT_NUM;
 	char *host =        AWS_HOST;
 
 	struct addrinfo	serv_addrinfo;
 	int sockfd, bytes, sent, total;
-//	char response[MAX_HTTP_RESPONSE_SIZE];
 
 	DEBUG_PRINT("Request:\n%s\n",http_request);
 
 
-	/* lookup the ip address */
-//	server = gethostbyname(host);
-//	if (server == NULL) {
-//		perror("perror, no such host");
-//		return 1;
-//	}
 
 	if (resolve_ip(host, &serv_addrinfo) != 0)
 	{
@@ -340,12 +328,6 @@ int send_http_request_to_dynamodb(char *http_request, int http_request_len, char
 		return 1;
 	}
 
-	/* fill in the structure */
-//	memset(&serv_addr,0,sizeof(serv_addr));
-//	serv_addr.sin_family = AF_INET;
-//	serv_addr.sin_port = htons(portno);
-//	memcpy(&serv_addr.sin_addr.s_addr,server->h_addr,server->h_length);
-//	memcpy(&serv_addr.sin_addr.s_addr,data->local_db_addr,MAX_IP_ADDR);
 
 	/* connect the socket */
 //	if (connect(sockfd,(struct sockaddr *)&serv_addr,sizeof(serv_addr)) < 0)
@@ -443,14 +425,9 @@ int put_dynamodb_http_request(char *payload, int payload_len, char *http_request
 
 	memcpy(signingkey, mac, SHA256_HASH_LENGTH);
 
-
-        // generate
-
 	int ipayloadlength = payload_len;
 
 	char payloadlength[10];
-
-//	char payload[] = "{\"TableName\":\"Graftel_Data\",\"Key\":{\"Data_ID\":{\"N\":\"1\"},\"Date_Type\":{\"S\":\"Flow_Rate\"}}}";
 
 	sprintf(payloadlength,"%d",ipayloadlength);
 
@@ -468,7 +445,7 @@ int put_dynamodb_http_request(char *payload, int payload_len, char *http_request
 	}
 
 	char canonical_request[MAX_HTTP_REQUEST_SIZE];
-//	int canonical_size;
+
 	char can_str1[] = "POST\n/\n\ncontent-length:";
 	char can_str2[] = "\ncontent-type:application/x-amz-json-1.0\nhost:";
 	char can_str3[] = ";\nx-amz-date:";
@@ -485,16 +462,7 @@ int put_dynamodb_http_request(char *payload, int payload_len, char *http_request
 	strcat(canonical_request, get_aws_request_str(num));
 	strcat(canonical_request, can_str5);
 	strcat(canonical_request, payloadhash);
-/*
-	canonical_size = strlen(can_str1)
-				   + strlen(payloadlength)
-				   + strlen(can_str2)
-				   + strlen(AWS_HOST)
-				   + strlen(can_str3)
-				   + strlen(get_aws_request_str(num))
-				   + strlen(can_str4)
-				   + strlen(payloadhash);
-*/
+
 	td = mhash_init(MHASH_SHA256);
 	mhash(td, canonical_request, strlen(canonical_request));
 	mac = mhash_end(td);

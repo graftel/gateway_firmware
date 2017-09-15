@@ -156,9 +156,13 @@ int file_exists(const char *fname)
 	}
 }
 
-
 int load_config(bridge *bridge_data)
 {
+	if (check_internet() == 0)  // always check the latest configuration file first
+	{
+
+	}
+
 	int i,j;
 	char *config_path = "/etc/hxmonitor/config.json";
 
