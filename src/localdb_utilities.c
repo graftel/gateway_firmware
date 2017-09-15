@@ -95,7 +95,7 @@ int write_sqlite_hx_data(data_set_def *data_set)
        return 1;
     }
 
-
+  sqlite3_free(err_msg);
   sqlite3_close(db);
 
   return 0;

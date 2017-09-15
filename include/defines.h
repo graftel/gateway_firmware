@@ -21,7 +21,7 @@
 #define MAX_SECRET_LEN 200
 #define MAX_LINE 500
 #define INTERNET_CHECK_HOST_NAME "www.google.com"
-
+#define MAX_PROTOCOL_LEN      20
 #define MAX_HTTP_REQUEST_SIZE 65535
 #define MAX_HTTP_RESPONSE_SIZE 65535
 
@@ -47,7 +47,7 @@
 //#define     DATE                   "20160824"
 #define  	INTERNET_CHECK_HOST    "www.google.com"
 
-#define DEBUG 3
+#define DEBUG 2
 #define DEFAULT_ERR_VALUE 999.0F
 
 #if defined(DEBUG) && DEBUG == 1
@@ -159,7 +159,7 @@ typedef struct
 	double			battery_percentage;
 	double			status;
 	char			ble_addr[MAX_BLE_ADDR];
-  core_module_protocol protocol;
+  char      protocol[MAX_PROTOCOL_LEN];
 	sensor 			*sen;
 	int				size_sen;
 	int				index_sen;
@@ -193,6 +193,8 @@ typedef struct
 
 	int				err_list[MAX_ERROR_MSG];
 	int				size_err;
+
+  double    config_version;
 } bridge;
 
 

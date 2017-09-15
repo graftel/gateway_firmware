@@ -156,12 +156,492 @@ int file_exists(const char *fname)
 	}
 }
 
+int get_eth0_mac_addr(char *mac_addr)
+{
+	int fd;
+	struct ifreq ifr;
+	char *iface = "eth0";
+	unsigned char *mac;
+
+	fd = socket(AF_INET, SOCK_DGRAM, 0);
+
+	ifr.ifr_addr.sa_family = AF_INET;
+	strncpy(ifr.ifr_name , iface , IFNAMSIZ-1);
+
+	ioctl(fd, SIOCGIFHWADDR, &ifr);
+
+	close(fd);
+
+	mac = (unsigned char *)ifr.ifr_hwaddr.sa_data;
+
+	//display mac address
+	sprintf(mac_addr, "%.2X:%.2X:%.2X:%.2X:%.2X:%.2X", mac[0],mac[1],mac[2],mac[3],mac[4],mac[5]);
+
+	return 0;
+}
+
+int update_config_file(bridge *bridge_data){
+	int i = 0, j = 0;
+	char payload[MAX_HTTP_REQUEST_SIZE];
+
+	json_object *jobj_root = json_object_new_object();
+	json_object *jvalue1 = json_object_new_string(bridge_data->aws_access_key);
+	json_object_object_add(jobj_root,"AWS_ACCESS_KEY",jvalue1);
+
+	json_object *jvalue2 = json_object_new_string(bridge_data->aws_secret_access_key);
+	json_object_object_add(jobj_root,"AWS_SECRET_ACCESS_KEY",jvalue2);
+
+	json_object *jvalue3 = json_object_new_string(bridge_data->addr);
+	json_object_object_add(jobj_root,"DeviceID",jvalue3);
+
+	json_object *jarr1 = json_object_new_array();
+
+	for (i = 0; i < bridge_data->size_cm; i++)
+	{
+			json_object *jcm = json_object_new_object();
+
+			json_object *jcm_value1 = json_object_new_string(bridge_data->cm[i].addr);
+			json_object_object_add(jcm,"DeviceID",jcm_value1);
+
+			json_object *jcm_value2 = json_object_new_string(bridge_data->cm[i].ble_addr);
+			json_object_object_add(jcm,"Bluetooth_Address",jcm_value2);
+
+			json_object *jcm_value3 = json_object_new_string(bridge_data->cm[i].protocol);
+			json_object_object_add(jcm,"Protocol",jcm_value3);
+
+			json_object *jsen_arr = json_object_new_array();
+
+			for (j = 0; j < bridge_data->cm[i].size_sen; j++)
+			{
+					json_object *jsen_addr = json_object_new_string(bridge_data->cm[i].sen[j].addr);
+					json_object_array_add(jsen_arr, jsen_addr);
+			}
+			json_object_object_add(jcm,"Sensors",jsen_arr);
+
+			json_object_array_add(jarr1, jcm);
+	}
+
+	json_object_object_add(jobj_root,"CoreModules",jarr1);
+
+	json_object *jvalue4 = json_object_new_double(bridge_data->config_version);
+	json_object_object_add(jobj_root,"ConfigVersion",jvalue4);
+
+	sprintf(payload, "%s",json_object_to_json_string_ext(jobj_root, JSON_C_TO_STRING_PRETTY));
+
+	DEBUG_PRINT(payload);
+
+	json_object_put(jobj_root);
+
+	return 0;
+}
+
+int update_sensors(int cm_index, bridge *bridge_data)
+{
+	int i;
+
+	char payload[MAX_HTTP_REQUEST_SIZE];
+	char http_request[MAX_HTTP_REQUEST_SIZE];
+	char http_response[MAX_HTTP_RESPONSE_SIZE];
+	int http_request_len;
+	int http_response_len;
+
+	json_object *jobj_root = json_object_new_object();
+	json_object *jtable_name = json_object_new_string("Hx.DeviceConfiguration");
+	json_object_object_add(jobj_root,"TableName",jtable_name);
+
+	json_object *jfilterexp = json_object_new_string("LinkDeviceID = :val");
+	json_object_object_add(jobj_root,"FilterExpression",jfilterexp);
+
+	json_object *jmacaddr0 = json_object_new_string(bridge_data->cm[cm_index].addr);
+	json_object *jmacaddr1 = json_object_new_object();
+	json_object *jmacaddr2 = json_object_new_object();
+	json_object_object_add(jmacaddr1,"S",jmacaddr0);
+	json_object_object_add(jmacaddr2,":val",jmacaddr1);
+	json_object_object_add(jobj_root,"ExpressionAttributeValues",jmacaddr2);
+
+	json_object *jcap = json_object_new_string("TOTAL");
+	json_object_object_add(jobj_root,"ReturnConsumedCapacity",jcap);
+
+	sprintf(payload, "%s",json_object_to_json_string_ext(jobj_root, JSON_C_TO_STRING_PLAIN));
+
+	json_object_put(jobj_root);
+
+	int ipayloadlength = strlen(payload);
+
+	DEBUG_PRINT("%s\n",payload);
+
+	if (put_dynamodb_http_request(payload, ipayloadlength, http_request, &http_request_len, AWSDB_SCAN, bridge_data->aws_access_key, bridge_data->aws_secret_access_key) != 0)
+	{
+		return -1;
+	}
+
+	if (send_http_request_to_dynamodb(http_request, http_request_len, http_response, &http_response_len) != 0)
+	{
+		return -1;
+	}
+
+	char *date_pos,*http_pos,*json_start;
+
+	http_pos = strstr(http_response, "HTTP/1.1 200 OK");
+	date_pos = strstr(http_response, "Date:");
+	json_start = strstr(http_response, "{");
+	if (http_pos == NULL)
+	{
+		return -1;
+	}
+
+	if (date_pos == NULL)
+	{
+		return -1;
+	}
+
+	if (json_start == NULL)
+	{
+		return -1;
+	}
+
+	json_object * jparse_obj = json_tokener_parse(json_start);
+
+	json_object_object_foreach(jparse_obj, key, val) { /*Passing through every array element*/
+			if (strcmp(key, "Count") == 0)
+			{
+				json_object * jcount = val;
+				int count = json_object_get_int(jcount);
+				if (count == 0)
+				{
+					break;
+				}
+			}
+			else if (strcmp(key, "Items") == 0)
+			{
+					printf("found sensors Array\n");
+					json_object * jitems = val;
+					json_object * jitem;
+					int arraylen = json_object_array_length(jitems);
+
+
+					bridge_data->cm[cm_index].sen = g_try_new0(sensor, arraylen);
+					bridge_data->cm[cm_index].size_sen = arraylen;
+
+
+
+					printf("numbers of sensors=%d\n", arraylen);
+					for (i = 0; i < arraylen; i++)
+					{
+						jitem =  json_object_array_get_idx(jitems, i);
+
+						json_object *jtmp0, *jtmp1;
+
+						if (json_object_object_get_ex(jitem,"DeviceID", &jtmp0))
+						{
+							if (json_object_object_get_ex(jtmp0,"S", &jtmp1))
+							{
+									strcpy(bridge_data->cm[cm_index].sen[i].addr, json_object_get_string(jtmp1));
+							}
+						}
+
+					}
+	    }
+	}
+	DEBUG_PRINT("exit sensors parse\n");
+	json_object_put(jparse_obj);
+
+	return 0;
+}
+
+int update_core_module(const char *gateway_addr, bridge *bridge_data)
+{
+	// free all resources
+	int i;
+	if (bridge_data->size_cm != 0)
+	{
+		uint8_t i = 0;
+		for(i = 0; i < bridge_data->size_cm; i++)
+		{
+			bridge_data->cm[i].size_sen = 0;
+			g_free(bridge_data->cm[i].sen);
+		}
+
+		bridge_data->size_cm = 0;
+		g_free(bridge_data->cm);
+	}
+
+	// first get core_module linked to gateway
+	char payload[MAX_HTTP_REQUEST_SIZE];
+	char http_request[MAX_HTTP_REQUEST_SIZE];
+	char http_response[MAX_HTTP_RESPONSE_SIZE];
+	int http_request_len;
+	int http_response_len;
+
+	json_object *jobj_root = json_object_new_object();
+	json_object *jtable_name = json_object_new_string("Hx.DeviceConfiguration");
+	json_object_object_add(jobj_root,"TableName",jtable_name);
+
+	json_object *jfilterexp = json_object_new_string("LinkDeviceID = :val");
+	json_object_object_add(jobj_root,"FilterExpression",jfilterexp);
+
+	json_object *jmacaddr0 = json_object_new_string(gateway_addr);
+	json_object *jmacaddr1 = json_object_new_object();
+	json_object *jmacaddr2 = json_object_new_object();
+	json_object_object_add(jmacaddr1,"S",jmacaddr0);
+	json_object_object_add(jmacaddr2,":val",jmacaddr1);
+	json_object_object_add(jobj_root,"ExpressionAttributeValues",jmacaddr2);
+
+	json_object *jcap = json_object_new_string("TOTAL");
+	json_object_object_add(jobj_root,"ReturnConsumedCapacity",jcap);
+
+	sprintf(payload, "%s",json_object_to_json_string_ext(jobj_root, JSON_C_TO_STRING_PLAIN));
+
+	json_object_put(jobj_root);
+
+	int ipayloadlength = strlen(payload);
+
+	DEBUG_PRINT("%s\n",payload);
+
+	if (put_dynamodb_http_request(payload, ipayloadlength, http_request, &http_request_len, AWSDB_SCAN, bridge_data->aws_access_key, bridge_data->aws_secret_access_key) != 0)
+	{
+		return -1;
+	}
+
+	if (send_http_request_to_dynamodb(http_request, http_request_len, http_response, &http_response_len) != 0)
+	{
+		return -1;
+	}
+
+	char *date_pos,*http_pos,*json_start;
+
+	http_pos = strstr(http_response, "HTTP/1.1 200 OK");
+	date_pos = strstr(http_response, "Date:");
+	json_start = strstr(http_response, "{");
+	if (http_pos == NULL)
+	{
+		return -1;
+	}
+
+	if (date_pos == NULL)
+	{
+		return -1;
+	}
+
+	if (json_start == NULL)
+	{
+		return -1;
+	}
+
+	json_object * jparse_obj = json_tokener_parse(json_start);
+
+	json_object_object_foreach(jparse_obj, key, val) { /*Passing through every array element*/
+			if (strcmp(key, "Count") == 0)
+			{
+				json_object * jcount = val;
+				int count = json_object_get_int(jcount);
+				if (count == 0)
+				{
+					break;
+				}
+			}
+			else if (strcmp(key, "Items") == 0)
+			{
+					printf("found core module Array\n");
+					json_object * jitems = val;
+					json_object * jitem;
+					int arraylen = json_object_array_length(jitems);
+
+
+					bridge_data->cm = g_try_new0(core_module, arraylen);
+					bridge_data->size_cm = arraylen;
+
+
+
+					printf("numbers of core_module=%d\n", arraylen);
+					for (i = 0; i < arraylen; i++)
+					{
+						jitem =  json_object_array_get_idx(jitems, i);
+
+						json_object *jtmp0, *jtmp1;
+
+						if (json_object_object_get_ex(jitem,"Bluetooth_Address", &jtmp0))
+						{
+							if (json_object_object_get_ex(jtmp0,"S", &jtmp1))
+							{
+								strcpy(bridge_data->cm[i].ble_addr, json_object_get_string(jtmp1));
+							}
+						}
+
+						if (json_object_object_get_ex(jitem,"DeviceID", &jtmp0))
+						{
+							if (json_object_object_get_ex(jtmp0,"S", &jtmp1))
+							{
+									strcpy(bridge_data->cm[i].addr, json_object_get_string(jtmp1));
+									if (update_sensors(i, bridge_data) != 0){
+										fprintf(stderr, "sensors update failed\n");
+									}
+
+
+							}
+						}
+
+						if (json_object_object_get_ex(jitem,"Protocol", &jtmp0))
+						{
+							if (json_object_object_get_ex(jtmp0,"S", &jtmp1)){
+									strcpy(bridge_data->cm[i].protocol, json_object_get_string(jtmp1));
+							}
+						}
+
+
+					}
+	    }
+	}
+
+	DEBUG_PRINT("exit cm parse\n");
+	json_object_put(jparse_obj);
+
+	if (update_config_file(bridge_data) != 0)
+	{
+		fprintf(stderr, "config file update failed\n");
+	}
+
+	return 0;
+
+}
+
+int load_remote_config(bridge *bridge_data)
+{
+	char mac_addr[17];
+
+	if (get_eth0_mac_addr(mac_addr) != 0)
+	{
+		fprintf(stderr, "error: cannot get mac address\n");
+		return -1;
+	}
+	// start search mac address on dynamodb
+
+	char payload[MAX_HTTP_REQUEST_SIZE];
+	char http_request[MAX_HTTP_REQUEST_SIZE];
+	char http_response[MAX_HTTP_RESPONSE_SIZE];
+	int http_request_len;
+	int http_response_len;
+
+	json_object *jobj_root = json_object_new_object();
+	json_object *jtable_name = json_object_new_string("Hx.DeviceConfiguration");
+	json_object_object_add(jobj_root,"TableName",jtable_name);
+
+	json_object *jfilterexp = json_object_new_string("Ethernet_MAC_Address = :val");
+	json_object_object_add(jobj_root,"FilterExpression",jfilterexp);
+
+	json_object *jmacaddr0 = json_object_new_string(mac_addr);
+	json_object *jmacaddr1 = json_object_new_object();
+	json_object *jmacaddr2 = json_object_new_object();
+	json_object_object_add(jmacaddr1,"S",jmacaddr0);
+	json_object_object_add(jmacaddr2,":val",jmacaddr1);
+	json_object_object_add(jobj_root,"ExpressionAttributeValues",jmacaddr2);
+
+	json_object *jcap = json_object_new_string("TOTAL");
+	json_object_object_add(jobj_root,"ReturnConsumedCapacity",jcap);
+
+	sprintf(payload, "%s",json_object_to_json_string_ext(jobj_root, JSON_C_TO_STRING_PLAIN));
+
+	json_object_put(jobj_root);
+
+	int ipayloadlength = strlen(payload);
+
+	DEBUG_PRINT("%s\n",payload);
+
+	if (put_dynamodb_http_request(payload, ipayloadlength, http_request, &http_request_len, AWSDB_SCAN, bridge_data->aws_access_key, bridge_data->aws_secret_access_key) != 0)
+	{
+		return -1;
+	}
+
+	if (send_http_request_to_dynamodb(http_request, http_request_len, http_response, &http_response_len) != 0)
+	{
+		return -1;
+	}
+
+	char *date_pos,*http_pos,*json_start;
+
+	http_pos = strstr(http_response, "HTTP/1.1 200 OK");
+	date_pos = strstr(http_response, "Date:");
+	json_start = strstr(http_response, "{");
+	if (http_pos == NULL)
+	{
+		return -1;
+	}
+
+	if (date_pos == NULL)
+	{
+		return -1;
+	}
+
+	if (json_start == NULL)
+	{
+		return -1;
+	}
+
+	json_object * jparse_obj = json_tokener_parse(json_start);
+
+	json_object_object_foreach(jparse_obj, key, val) { /*Passing through every array element*/
+			if (strcmp(key, "Count") == 0)
+			{
+				json_object * jcount = val;
+				int count = json_object_get_int(jcount);
+				if (count != 1)
+				{
+					DEBUG_PRINT("count wrong\n");
+					break;
+				}
+			}
+			else if (strcmp(key, "Items") == 0)
+			{
+				DEBUG_PRINT("found module \n");
+				json_object *jitem = json_object_array_get_idx(val, 0);
+				json_object *jtmp0, *jtmp1;
+
+				if (json_object_object_get_ex(jitem,"ConfigVersion", &jtmp0))
+				{
+					if (json_object_object_get_ex(jtmp0,"N", &jtmp1))
+					{
+							const char *version = json_object_get_string(jtmp1);
+							double ver = atof(version);
+
+							if (ver <= bridge_data->config_version)
+							{
+								DEBUG_PRINT("no need to update\n");
+								break;
+							}
+							else
+							{
+								bridge_data->config_version = ver;
+								DEBUG_PRINT("config update needed\n");
+							}
+					}
+				}
+
+				if (json_object_object_get_ex(jitem,"DeviceID", &jtmp0))
+				{
+					if (json_object_object_get_ex(jtmp0,"S", &jtmp1))
+					{
+							DEBUG_PRINT("get DeviceID\n");
+							const char *gateway_addr = json_object_get_string(jtmp1);
+							memset(bridge_data->addr,0,sizeof(bridge_data->addr));
+							strcpy(bridge_data->addr,gateway_addr);
+							if (update_core_module(gateway_addr, bridge_data) != 0)
+							{
+								fprintf(stderr, "update failed\n");
+							}
+					}
+				}
+
+	    }
+	}
+	DEBUG_PRINT("exit gateway parse\n");
+	json_object_put(jparse_obj);
+
+	return 0;
+}
+
 int load_config(bridge *bridge_data)
 {
-	if (check_internet() == 0)  // always check the latest configuration file first
-	{
 
-	}
 
 	int i,j;
 	char *config_path = "/etc/hxmonitor/config.json";
@@ -220,7 +700,7 @@ int load_config(bridge *bridge_data)
 			{
 					jitem =  json_object_array_get_idx(jitems, i);
 					json_object *jble_addr_value, *jaddr_value, *jsensors;
-					if (json_object_object_get_ex(jitem,"BLE_Address", &jble_addr_value))
+					if (json_object_object_get_ex(jitem,"Bluetooth_Address", &jble_addr_value))
 					{
 						memset(bridge_data->cm[i].ble_addr,0,sizeof(bridge_data->cm[i].ble_addr));
 						g_stpcpy(bridge_data->cm[i].ble_addr, json_object_get_string(jble_addr_value));
@@ -234,14 +714,7 @@ int load_config(bridge *bridge_data)
 
 					if (json_object_object_get_ex(jitem,"Protocol", &jaddr_value))
 					{
-						if (strcmp(json_object_get_string(jaddr_value), "Bluetooth") == 0)
-						{
-							bridge_data->cm[i].protocol = CM_BLE;
-						}
-						else if (strcmp(json_object_get_string(jaddr_value), "RS485") == 0)
-						{
-							bridge_data->cm[i].protocol = CM_RS485;
-						}
+						strcpy(bridge_data->cm[i].protocol, json_object_get_string(jaddr_value));
 					}
 
 					if (json_object_object_get_ex(jitem,"Sensors", &jsensors))
@@ -279,6 +752,10 @@ int load_config(bridge *bridge_data)
 			memset(bridge_data->aws_secret_access_key,0,sizeof(bridge_data->aws_secret_access_key));
 			g_stpcpy(bridge_data->aws_secret_access_key, json_object_get_string(val));
 		}
+		else if (strcmp(key, "ConfigVersion") == 0)
+		{
+			bridge_data->config_version = json_object_get_double(val);
+		}
 
 	}
 
@@ -308,6 +785,12 @@ for(i = 0; i < bridge_data->size_cm; i++)
 
 	bridge_data->data_queue = g_async_queue_new();
 	bridge_data->queue_lock = 0;
+
+	if (check_internet() == 0)  // always check the latest configuration file first
+	{
+		load_remote_config(bridge_data);
+	}
+
 	return 0;
 
 }

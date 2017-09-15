@@ -32,7 +32,7 @@ gboolean timeout_callback(gpointer data)
 				{
 					core_module *cur_cm = &bridge_data.cm[i];
 
-					if (cur_cm->protocol == CM_BLE)
+					if (strstr(cur_cm->protocol, "Bluetooth") != NULL)
 					{
             ble_data_acq(cur_cm);
 					}

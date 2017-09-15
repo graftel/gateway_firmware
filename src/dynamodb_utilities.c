@@ -74,7 +74,7 @@ int sync_single_raw_data(int timestamp, char *deviceID, double data, int data_qu
 
 	DEBUG_PRINT("%s\n",payload);
 
-	if (put_dynamodb_http_request(payload, ipayloadlength, http_request, &http_request_len, AWSDB_PUT_ITEM) != 0)
+	if (put_dynamodb_http_request(payload, ipayloadlength, http_request, &http_request_len, AWSDB_PUT_ITEM, bridge_data->aws_access_key, bridge_data->aws_secret_access_key) != 0)
 	{
 		return -1;
 	}
@@ -242,18 +242,15 @@ void *db_data_handler(void *args)
 							no_internet_count = 0;
 						}
 					}
-
-
-
-					g_free(data_set);
 				}
+				g_free(data_set);
 		}
 
 
 }
 
 
-int recv_timeout(int s , int timeout, char *resp)
+int recv_timeout(int s , double timeout, char *resp)
 {
     int size_recv , total_size= 0;
     struct timeval begin , now;
@@ -289,7 +286,7 @@ int recv_timeout(int s , int timeout, char *resp)
         if((size_recv =  read(s , chunk , CHUNK_SIZE) ) < 0)
         {
             //if nothing was received then we want to wait a little before trying again, 0.1 seconds
-            usleep(10000);
+            usleep(1000);
         }
         else
         {
@@ -355,7 +352,7 @@ int send_http_request_to_dynamodb(char *http_request, int http_request_len, char
 
 	/* receive the response */
 
-	int total_recv = recv_timeout(sockfd, 1, http_response);
+	int total_recv = recv_timeout(sockfd, 0.5, http_response);
 	/* close the socket */
 	close(sockfd);
 
@@ -370,7 +367,7 @@ int send_http_request_to_dynamodb(char *http_request, int http_request_len, char
 	return 0;
 }
 
-int put_dynamodb_http_request(char *payload, int payload_len, char *http_request, int *http_request_len, aws_request_num num)
+int put_dynamodb_http_request(char *payload, int payload_len, char *http_request, int *http_request_len, aws_request_num num, char *aws_access_key, char *aws_secret_access_key)
 {
 	int j;
 	MHASH td;
@@ -403,7 +400,7 @@ int put_dynamodb_http_request(char *payload, int payload_len, char *http_request
 
 	char SIG_FULL[100];
 	strcpy(SIG_FULL, AWS_SIG_START);
-	strcat(SIG_FULL, bridge_data->aws_secret_access_key);
+	strcat(SIG_FULL, aws_secret_access_key);
 
 	DEBUG_PRINT("SIG_FULL = %s\n", SIG_FULL);
 
@@ -514,7 +511,7 @@ int put_dynamodb_http_request(char *payload, int payload_len, char *http_request
 	strcat(send_message, "\r\nx-amz-date: ");
 	strcat(send_message, time_full);
 	strcat(send_message, "\r\nAuthorization: AWS4-HMAC-SHA256 Credential=");
-	strcat(send_message, bridge_data->aws_access_key);
+	strcat(send_message, aws_access_key);
 	strcat(send_message, "/");
 	strcat(send_message, time_date);
 	strcat(send_message, "/");

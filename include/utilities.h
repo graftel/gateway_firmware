@@ -19,7 +19,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <glib.h>
-
+#include <dynamodb_utilities.h>
 
 uint8_t singlechar2hex(char din);
 
