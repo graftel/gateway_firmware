@@ -126,6 +126,7 @@ int main()
 	if (load_config(&bridge_data) == 1)
 	{
 		g_print("config load failed\n");
+		return -1;
 	}
 	// Start Getting Sensor Definitions
 	//get_sensor_defs(&bridge_data);

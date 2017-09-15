@@ -228,7 +228,7 @@ int update_config_file(bridge *bridge_data){
 
 	sprintf(payload, "%s",json_object_to_json_string_ext(jobj_root, JSON_C_TO_STRING_PRETTY));
 
-	DEBUG_PRINT(payload);
+	DEBUG_PRINT("output_data:%s\n",payload);
 
 	json_object_put(jobj_root);
 
