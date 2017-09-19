@@ -25,6 +25,7 @@
 #define MAX_HTTP_REQUEST_SIZE 65535
 #define MAX_HTTP_RESPONSE_SIZE 65535
 
+
 #define     AWS_REGION             "us-east-1"                                   // The region where your dynamo DB table lives.
                                                                                  // Copy the _exact_ region value from this table: http://docs.aws.amazon.com/general/latest/gr/rande.html#ddb_region
 #define     AWS_HOST               "dynamodb.us-east-1.amazonaws.com"            // The endpoint host for where your dynamo DB table lives.
