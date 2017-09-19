@@ -6,7 +6,7 @@
 #include <localdb_utilities.h>
 
 int start_time,current_time; // test
-int interval = 10; // seconds
+int interval = 60; // seconds
 int status = 0;
 int i = 0, j;
 static bridge bridge_data;
@@ -123,9 +123,9 @@ int main()
 
 	MCP79410_Setup_Date(curSec,curMin,curHour,curDayofweek,is12,curDay,curMonth,curYear); */
     GMainLoop *loop;
-	if (load_config(&bridge_data) == 1)
+	if (init_data(&bridge_data) == 1)
 	{
-		g_print("config load failed\n");
+		g_print("init failed\n");
 		return -1;
 	}
 	// Start Getting Sensor Definitions

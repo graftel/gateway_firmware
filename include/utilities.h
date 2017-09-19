@@ -8,6 +8,7 @@
 #include <sys/types.h>
 #include <sys/time.h>
 #include <sys/ioctl.h>
+#include <sys/stat.h>
 #include <net/if.h>   //ifreq
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -20,6 +21,9 @@
 #include <unistd.h>
 #include <glib.h>
 #include <dynamodb_utilities.h>
+
+#define CONFIG_FILE_PATH "/etc/hxmonitor/config.json"
+#define CONFIG_FOLDER_PATH "/etc/hxmonitor/"
 
 uint8_t singlechar2hex(char din);
 
@@ -39,7 +43,7 @@ int check_internet();
 
 int file_exists(const char *fname);
 
-int load_config(bridge *bridge_data);
+int init_data(bridge *bridge_data);
 
 int free_defs(bridge *data);
 

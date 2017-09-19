@@ -232,6 +232,28 @@ int update_config_file(bridge *bridge_data){
 
 	json_object_put(jobj_root);
 
+	struct stat st = {0};
+
+	if (stat(CONFIG_FOLDER_PATH, &st) == -1) {
+			mkdir(CONFIG_FOLDER_PATH, 0755);
+	}
+
+	FILE *file = fopen(CONFIG_FILE_PATH, "r+");
+	if (file == NULL) {
+		perror("could not open file");
+	}
+
+	if (ftruncate(fileno(file),0) != 0)
+	{
+		perror("truncate failed");
+	}
+
+	if (fputs(payload, file) == EOF)
+	{
+		perror("Cannot write to file");
+	}
+
+	fclose(file);
 	return 0;
 }
 
@@ -639,24 +661,14 @@ int load_remote_config(bridge *bridge_data)
 	return 0;
 }
 
-int load_config(bridge *bridge_data)
+int load_local_config(bridge *bridge_data)
 {
-
-
 	int i,j;
-	char *config_path = "/etc/hxmonitor/config.json";
-
-	if (file_exists(config_path) == 0)
-	{
-		printf("Error, cannot locate config file\n");
-		return 1;
-	}
-
 	FILE *fp;
 	long lSize;
 	char *buffer;
 
-	fp = fopen (config_path , "rb" );
+	fp = fopen (CONFIG_FILE_PATH , "rb" );
 	if( !fp ) return 1;
 
 	fseek( fp , 0L , SEEK_END);
@@ -783,12 +795,39 @@ for(i = 0; i < bridge_data->size_cm; i++)
 	fclose(fp);
 	free(buffer);
 
-	bridge_data->data_queue = g_async_queue_new();
-	bridge_data->queue_lock = 0;
+	return 0;
+}
 
-	if (check_internet() == 0)  // always check the latest configuration file first
+int init_data(bridge *bridge_data)
+{
+
+
+
+//	char *config_path = "/etc/hxmonitor/config.json";
+
+	bridge_data->data_queue = g_async_queue_new();
+
+
+	if (file_exists(CONFIG_FILE_PATH) == 0)
 	{
-		load_remote_config(bridge_data);
+		printf("Error, cannot locate config file\n");
+		return 1;
+	}
+	else
+	{
+		if (load_local_config(bridge_data) != 0){
+			printf("cannot load local file\n");
+			return 1;
+		}
+		else
+		{
+				if (check_internet() == 0)  // always check the latest configuration file first
+				{
+					if (load_remote_config(bridge_data) != 0){
+						printf("cannot load remote config file\n");
+					}
+				}
+		}
 	}
 
 	return 0;

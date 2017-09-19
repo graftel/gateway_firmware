@@ -47,7 +47,7 @@
 //#define     DATE                   "20160824"
 #define  	INTERNET_CHECK_HOST    "www.google.com"
 
-#define DEBUG 2
+#define DEBUG 3
 #define DEFAULT_ERR_VALUE 999.0F
 
 #if defined(DEBUG) && DEBUG == 1
@@ -187,7 +187,6 @@ typedef struct
 	//Sensors:
 	core_module  	*cm;
   GAsyncQueue    *data_queue;
-  int       queue_lock;
 	int				size_cm;
 	int				index_cm;
 
