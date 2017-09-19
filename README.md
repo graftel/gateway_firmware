@@ -3,6 +3,8 @@ Graftel Bridge Program, Written in C
 
 Hardware: Linux based embedded system, e.g. Raspberry Pi
 
+Dependancies: glib2.0, libbluetooth, libjson-c, libmhash, libsqlite3
+
 Modules:
 
 - Data acquisition module
