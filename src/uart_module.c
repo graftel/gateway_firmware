@@ -1,51 +1,5 @@
-#include <stdio.h>
-#include <unistd.h>			//Used for UART
-#include <fcntl.h>			//Used for UART
-#include <termios.h>		//Used for UART
-#include <stdint.h>
-#include <string.h>
-#include <stdlib.h>
-#include <iwlib.h>
-#include <sys/time.h>
-
-#define WLAN0 "wlan0"
-#define MAX_BUFFER_SIZE 256
-#define CMD_READ_TIME "ReadTime"
-#define CMD_WIFI_SCAN "WifiScan"
-#define CMD_WIFI_SET_SSID "WifiSetSSID"
-#define CMD_WIFI_SET_PSK  "WifiSetPSK"
-#define CMD_WIFI_CONNET  "WifiConnect"
-#define CMD_WIFI_STATUS   "WifiGetSSID"
-#define CMD_READ_RAW_DATA  "ReadRawData"
-//-------------------------
-//----- SETUP USART 0 -----
-//-------------------------
-//At bootup, pins 8 and 10 are already set to UART0_TXD, UART0_RXD (ie the alt0 function) respectively
-
-#define BUFSIZE 4028
-#define MAX_SSID_LEN 50
-#define MAX_MAC_ADDR_LEN 20
-#define MAX_ENC_LEN 20
-#define MAX_QUALITY_LEN 20
-#define RETRY_TIMES 3
-#define MAX_PSK_LEN 50
-typedef enum {
-   OPEN = 0,
-   WEP ,
-   WPA,
-   WPA2
-}enc_type;
-
-typedef struct{
-  char SSID[MAX_SSID_LEN];
-  char mac_addr[MAX_MAC_ADDR_LEN];
-  int channel;
-  int cell_num;
-  char quality[MAX_QUALITY_LEN];
-  int dbm;
-  enc_type enc;
-  int signal_level;
-} scan_info_def;
+#include <uart_module.h>
+#include <defines.h>
 
 int enc_status = 0;
 
@@ -53,34 +7,36 @@ int connect_to_wifi(const char *ssid, const char *psk)
 {
 	  FILE * pFile;
 	  pFile = fopen ("/etc/network/interfaces","r");
-      size_t len = 0;
-	  ssize_t read;
-
+//    size_t len = 0;
+//	  ssize_t read;
+		int res = 0;
 	  char wpa_file_path[50];
 
 	  if (pFile!=NULL)
 	  {
 			char *loc;
-			int found_iface = 0;
 
       fseek(pFile, 0, SEEK_END);
       long fsize = ftell(pFile);
       fseek(pFile, 0, SEEK_SET);  //same as rewind(f);
 
       char *string = malloc(fsize + 1);
-      fread(string, fsize, 1, pFile);
+      res = fread(string, fsize, 1, pFile);
+			if (res == -1)
+			{
+				return -1;
+			}
       fclose(pFile);
 
-			loc = strstr(string, "wlan0");
+			loc = strstr(string, WIFI_INTERFACE_NAME);
 			if (loc != NULL)
 			{
-				found_iface = 1;
-        printf("found interface\n" );
+        DEBUG_PRINT("found interface\n" );
 			}
 			loc = strstr(loc, "wpa-conf");
 			if (loc != NULL)
 			{
-        printf("found wpa-conf\n");
+        DEBUG_PRINT("found wpa-conf\n");
 				int j = 0;
 				memset(wpa_file_path,0,sizeof(wpa_file_path));
 				loc += 9;
@@ -89,7 +45,7 @@ int connect_to_wifi(const char *ssid, const char *psk)
 					memcpy(wpa_file_path + j, loc + j, 1);
           j++;
 				}
-				printf("wpa_file_path=%s\n",wpa_file_path);
+				DEBUG_PRINT("wpa_file_path=%s\n",wpa_file_path);
 			}
 	  }
 
@@ -101,24 +57,27 @@ int connect_to_wifi(const char *ssid, const char *psk)
     strcat(cmd, psk);
     strcat(cmd, " > ");
     strcat(cmd, wpa_file_path);
-    strcat(cmd, " && ifdown wlan0 && ifup wlan0");
+    strcat(cmd, " && ifdown ");
+		strcat(cmd, WIFI_INTERFACE_NAME);
+		strcat(cmd, " && ifup ");
+		strcat(cmd, WIFI_INTERFACE_NAME);
 
-    printf("write cmd = %s\n", cmd);
+    DEBUG_PRINT("write cmd = %s\n", cmd);
 
     char buf[BUFSIZE];
     FILE *fp;
     char getSSID[MAX_SSID_LEN];
     if ((fp = popen(cmd, "r")) == NULL) {
-        printf("Error opening pipe!\n");
+        DEBUG_PRINT("Error opening pipe!\n");
         return -1;
     }
 
     while (fgets(buf, BUFSIZE, fp) != NULL) {
-        printf("%s\n", buf);
+        DEBUG_PRINT("%s\n", buf);
     }
 
     if(pclose(fp))  {
-        printf("Command not found or exited with error status\n");
+        DEBUG_PRINT("Command not found or exited with error status\n");
     }
 
     usleep(5000000);
@@ -127,14 +86,15 @@ int connect_to_wifi(const char *ssid, const char *psk)
 
     memset(cmd,0,sizeof(cmd));
 
-    strcpy(cmd, "iwconfig wlan0");
+    strcpy(cmd, "iwconfig ");
+		strcat(cmd, WIFI_INTERFACE_NAME);
 
     int retry = RETRY_TIMES;
 
     while (1)
     {
       if ((fp = popen(cmd, "r")) == NULL) {
-          printf("Error opening pipe!\n");
+          DEBUG_PRINT("Error opening pipe!\n");
       }
 
       char *loc;
@@ -155,7 +115,7 @@ int connect_to_wifi(const char *ssid, const char *psk)
       }
 
       if(pclose(fp))  {
-          printf("Command not found or exited with error status\n");
+          DEBUG_PRINT("Command not found or exited with error status\n");
       }
 
       char *ssid_check;
@@ -169,7 +129,7 @@ int connect_to_wifi(const char *ssid, const char *psk)
 
         if (connected > 5)
         {
-          printf("connected\n");
+          DEBUG_PRINT("connected\n");
           break;
         }
       }
@@ -179,7 +139,7 @@ int connect_to_wifi(const char *ssid, const char *psk)
         retry--;
         if (retry == 0)
         {
-          printf("timeout, cannot connect, recheck password\n");
+          DEBUG_PRINT("timeout, cannot connect, recheck password\n");
           return -1;
         }
         else
@@ -194,13 +154,17 @@ int connect_to_wifi(const char *ssid, const char *psk)
 
 int wifi_scan(scan_info_def **scan_info, int *size_info)
 {
-  char *cmd = "iwlist wlan0 scan";
+	char cmd[CMD_LINE_SIZE];
+
+	strcpy(cmd, "iwlist ");
+	strcat(cmd, WIFI_INTERFACE_NAME);
+	strcat(cmd, " scan");
 
   char buf[BUFSIZE];
   FILE *fp;
 
   if ((fp = popen(cmd, "r")) == NULL) {
-      printf("Error opening pipe!\n");
+      DEBUG_PRINT("Error opening pipe!\n");
       return -1;
   }
   *scan_info = malloc(sizeof(scan_info_def));
@@ -297,8 +261,6 @@ int wifi_scan(scan_info_def **scan_info, int *size_info)
       loc = strstr(buf, "Encryption key:");
       if (loc != NULL)
       {
-        char *check;
-
         if (strstr(loc + strlen("Encryption key:"), "on") != NULL)
         {
           (*scan_info)[cur_cell].enc = WEP;
@@ -327,31 +289,39 @@ int wifi_scan(scan_info_def **scan_info, int *size_info)
   (*size_info) = num_cell;
 
   int i;
-  printf("******************* Results START *******************\n", i);
+  DEBUG_PRINT("******************* Results START *******************\n");
   for (i = 0; i < num_cell; i++)
   {
-    printf("cell #%d\n", i);
-    printf("ssid=%s\n", (*scan_info)[i].SSID);
-    printf("mac_addr=%s\n", (*scan_info)[i].mac_addr);
-    printf("quality=%s\n", (*scan_info)[i].quality);
-    printf("signal_level=%d\n", (*scan_info)[i].signal_level);
-    printf("channel=%d\n", (*scan_info)[i].channel);
-    printf("enc=%d\n", (*scan_info)[i].enc);
-    printf("------------------------------------------------\n", i);
+    DEBUG_PRINT("cell #%d\n", i);
+    DEBUG_PRINT("ssid=%s\n", (*scan_info)[i].SSID);
+    DEBUG_PRINT("mac_addr=%s\n", (*scan_info)[i].mac_addr);
+    DEBUG_PRINT("quality=%s\n", (*scan_info)[i].quality);
+    DEBUG_PRINT("signal_level=%d\n", (*scan_info)[i].signal_level);
+    DEBUG_PRINT("channel=%d\n", (*scan_info)[i].channel);
+    DEBUG_PRINT("enc=%d\n", (*scan_info)[i].enc);
+    DEBUG_PRINT("------------------------------------------------\n");
   }
-  printf("******************* Results END *******************\n", i);
+  DEBUG_PRINT("******************* Results END *******************\n");
 
   if(pclose(fp))  {
-      printf("Command not found or exited with error status\n");
+      DEBUG_PRINT("Command not found or exited with error status\n");
       return -1;
   }
+
+	return 0;
 }
 
+void write_with_debug(int fd, char *buffer, int len)
+{
+	if (write(fd, buffer, len) != 0)
+	{
+		DEBUG_PRINT("UART write failed\n");
+	}
+}
 
-int main()
+void *uart_wrapper(void *args)
 {
 	int uart0_filestream = -1;
-
 	//OPEN THE UART
 	//The flags (defined in fcntl.h):
 	//	Access modes (use 1 of these):
@@ -365,11 +335,11 @@ int main()
 	//
 	//	O_NOCTTY - When set and path identifies a terminal device, open() shall not cause the terminal device to become the controlling terminal for the process.
 
-	uart0_filestream = open("/dev/ttyS0", O_RDWR | O_NOCTTY);		//Open in non blocking read/write mode
+	uart0_filestream = open(UART_DEV_NAME, O_RDWR | O_NOCTTY);		//Open in non blocking read/write mode
 	if (uart0_filestream == -1)
 	{
 		//ERROR - CAN'T OPEN SERIAL PORT
-		printf("Error - Unable to open UART.  Ensure it is not in use by another application\n");
+		DEBUG_PRINT("Error - Unable to open UART.  Ensure it is not in use by another application\n");
 	}
 
 	//CONFIGURE THE UART
@@ -392,150 +362,144 @@ int main()
 	tcsetattr(uart0_filestream, TCSANOW, &options);
 
 		//----- TX BYTES -----
-	char tx_buffer[20];
 	char rx_buffer[MAX_BUFFER_SIZE];
 	char data_buffer[MAX_BUFFER_SIZE];
 	int index = 0;
-	unsigned char *p_tx_buffer;
 	uint8_t x;
 	// parse command end with /r 13
 	memset(rx_buffer, 0, sizeof(rx_buffer));
 
-	if (uart0_filestream != -1)
+	while(1)
 	{
-		while(1)
+		if (read (uart0_filestream, &x, 1) > 0)
 		{
-			if (read (uart0_filestream, &x, 1) > 0)
+			if (x != 0x0d && index < MAX_BUFFER_SIZE)
 			{
-				if (x != 0x0d && index < MAX_BUFFER_SIZE)
+				rx_buffer[index] = x;
+				index++;
+			}
+			else
+			{
+				if (strcmp(CMD_READ_TIME, rx_buffer) == 0)
 				{
-					rx_buffer[index] = x;
-					index++;
+					long timenow = time(NULL);
+					sprintf(data_buffer, "%ld", timenow);
+					write_with_debug(uart0_filestream, rx_buffer, strlen(rx_buffer));
+					write_with_debug(uart0_filestream, "=", 1);
+					write_with_debug(uart0_filestream, data_buffer, strlen(data_buffer));
+					write_with_debug(uart0_filestream, "\r", 1);
 				}
-				else
+				else if (strcmp(CMD_WIFI_GET_SSID, rx_buffer) == 0)
 				{
-					if (strcmp(CMD_READ_TIME, rx_buffer) == 0)
-					{
-						long timenow = time(NULL);
-						sprintf(data_buffer, "%ld", timenow);
-						write(uart0_filestream, rx_buffer, strlen(rx_buffer));
-						write(uart0_filestream, "=", 1);
-						write(uart0_filestream, data_buffer, strlen(data_buffer));
-						write(uart0_filestream, "\r", 1);
-					}
-					else if (strcmp(CMD_WIFI_STATUS, rx_buffer) == 0)
-					{
 
-	//					write(uart0_filestream, rx_buffer, strlen(rx_buffer));
-	//					write(uart0_filestream, "=", 1);
-	//					write(uart0_filestream, essid, strlen(essid));
-	//					write(uart0_filestream, "\r", 1);
-					}
-					else if (strcmp(CMD_WIFI_SCAN, rx_buffer) == 0)
-					{
-              scan_info_def *scan_results;
-              int size_results;
+						write_with_debug(uart0_filestream, rx_buffer, strlen(rx_buffer));
+						write_with_debug(uart0_filestream, "=", 1);
+		//				write_with_debug(uart0_filestream, essid, strlen(essid));
+						write_with_debug(uart0_filestream, "\r", 1);
+				}
+				else if (strcmp(CMD_WIFI_SCAN, rx_buffer) == 0)
+				{
+            scan_info_def *scan_results;
+            int size_results;
 
-              if (wifi_scan(&scan_results, &size_results) == 0)
-              {
-                int i;
-                for (i = 0; i < size_results; i++)
-                {
-                  write(uart0_filestream, "ssid=", strlen("ssid="));
-                  write(uart0_filestream, scan_results[i].SSID, strlen(scan_results[i].SSID));
-                  write(uart0_filestream, ",", 1);
-                  write(uart0_filestream, "mac_addr=", strlen("mac_addr="));
-                  write(uart0_filestream, scan_results[i].mac_addr, strlen(scan_results[i].mac_addr));
-                  write(uart0_filestream, ",", 1);
-                  write(uart0_filestream, "quality=", strlen("quality="));
-                  write(uart0_filestream, scan_results[i].quality, strlen(scan_results[i].quality));
-                  write(uart0_filestream, ",", 1);
-                  memset(data_buffer,0,sizeof(data_buffer));
-                  sprintf(data_buffer, "%d", scan_results[i].signal_level);
-                  write(uart0_filestream, "signal_level=", strlen("signal_level="));
-                  write(uart0_filestream, data_buffer, strlen(data_buffer));
-                  write(uart0_filestream, ",", 1);
-                  memset(data_buffer,0,sizeof(data_buffer));
-                  sprintf(data_buffer, "%d", scan_results[i].channel);
-                  write(uart0_filestream, "channel=", strlen("channel="));
-                  write(uart0_filestream, data_buffer, strlen(data_buffer));
-                  write(uart0_filestream, ",", 1);
-                  memset(data_buffer,0,sizeof(data_buffer));
-                  switch (scan_results[i].enc) {
-                    case OPEN:
-                      strcpy(data_buffer,"OPEN");
-                      break;
-                    case WEP:
-                      strcpy(data_buffer,"WEP");
-                      break;
-                    case WPA:
-                      strcpy(data_buffer,"WPA");
-                      break;
-                    case WPA2:
-                      strcpy(data_buffer,"WPA2");
-                      break;
-                  }
-                  write(uart0_filestream, "enc=", strlen("enc="));
-                  write(uart0_filestream, data_buffer, strlen(data_buffer));
-                  write(uart0_filestream, "\r", 1);
-
-                }
-              }
-
-              if (scan_results != NULL)
-              {
-                printf("scan_results freed\n");
-                free(scan_results);
-              }
-
-					}
-          else if (strncmp(rx_buffer, CMD_WIFI_CONNET, strlen(CMD_WIFI_CONNET)) == 0)
-          {
-            char *loc1, *loc2;
-            char ssid[MAX_SSID_LEN];
-            char psk[MAX_PSK_LEN];
-            loc1 = strstr(rx_buffer, " ");
-            if (loc1 != NULL)
+            if (wifi_scan(&scan_results, &size_results) == 0)
             {
-              loc2 = strstr(loc1 + 1, " ");
-              if (loc2 != NULL)
+              int i;
+              for (i = 0; i < size_results; i++)
               {
-                  printf("loc2-loc1=%d\n", loc2-loc1);
-                  printf("loc2-rx_buffer=%d\n", loc2-rx_buffer);
-                  printf("strlen(rx_buffer) - (loc2-rx_buffer)=%d\n", strlen(rx_buffer) - (loc2-rx_buffer));
-                  memset(ssid,0,sizeof(ssid));
-                  memcpy(ssid,loc1 + 1, loc2-loc1 - 1);
-                  memset(psk,0,sizeof(psk));
-                  memcpy(psk,loc2 + 1, strlen(rx_buffer) - (loc2-rx_buffer) - 1);
-
-                  printf("ssid=%s\n", ssid);
-                  printf("psk=%s\n", psk);
-
-                  int status = connect_to_wifi(ssid,psk);
-                  switch (status) {
-                    case 0:
-                      write(uart0_filestream, "Connected with internet\r", strlen("Connected with internet\r"));
-                      break;
-                    case 1:
-                      write(uart0_filestream, "Connected no internet\r", strlen("Connected no internet\r"));
-                      break;
-                    default:
-                      write(uart0_filestream, "Credentials error\r", strlen("Credentials error\r"));
-                      break;
-                  }
+                write_with_debug(uart0_filestream, "ssid=", strlen("ssid="));
+                write_with_debug(uart0_filestream, scan_results[i].SSID, strlen(scan_results[i].SSID));
+                write_with_debug(uart0_filestream, ",", 1);
+                write_with_debug(uart0_filestream, "mac_addr=", strlen("mac_addr="));
+                write_with_debug(uart0_filestream, scan_results[i].mac_addr, strlen(scan_results[i].mac_addr));
+                write_with_debug(uart0_filestream, ",", 1);
+                write_with_debug(uart0_filestream, "quality=", strlen("quality="));
+                write_with_debug(uart0_filestream, scan_results[i].quality, strlen(scan_results[i].quality));
+                write_with_debug(uart0_filestream, ",", 1);
+                memset(data_buffer,0,sizeof(data_buffer));
+                sprintf(data_buffer, "%d", scan_results[i].signal_level);
+                write_with_debug(uart0_filestream, "signal_level=", strlen("signal_level="));
+                write_with_debug(uart0_filestream, data_buffer, strlen(data_buffer));
+                write_with_debug(uart0_filestream, ",", 1);
+                memset(data_buffer,0,sizeof(data_buffer));
+                sprintf(data_buffer, "%d", scan_results[i].channel);
+                write_with_debug(uart0_filestream, "channel=", strlen("channel="));
+                write_with_debug(uart0_filestream, data_buffer, strlen(data_buffer));
+                write_with_debug(uart0_filestream, ",", 1);
+                memset(data_buffer,0,sizeof(data_buffer));
+                switch (scan_results[i].enc) {
+                  case OPEN:
+                    strcpy(data_buffer,"OPEN");
+                    break;
+                  case WEP:
+                    strcpy(data_buffer,"WEP");
+                    break;
+                  case WPA:
+                    strcpy(data_buffer,"WPA");
+                    break;
+                  case WPA2:
+                    strcpy(data_buffer,"WPA2");
+                    break;
+                }
+                write_with_debug(uart0_filestream, "enc=", strlen("enc="));
+                write_with_debug(uart0_filestream, data_buffer, strlen(data_buffer));
+                write_with_debug(uart0_filestream, "\r", 1);
 
               }
             }
 
+            if (scan_results != NULL)
+            {
+              DEBUG_PRINT("scan_results freed\n");
+              free(scan_results);
+            }
 
+				}
+        else if (strncmp(rx_buffer, CMD_WIFI_CONNET, strlen(CMD_WIFI_CONNET)) == 0)
+        {
+          char *loc1, *loc2;
+          char ssid[MAX_SSID_LEN];
+          char psk[MAX_PSK_LEN];
+          loc1 = strstr(rx_buffer, " ");
+          if (loc1 != NULL)
+          {
+            loc2 = strstr(loc1 + 1, " ");
+            if (loc2 != NULL)
+            {
+                DEBUG_PRINT("loc2-loc1=%d\n", loc2-loc1);
+                DEBUG_PRINT("loc2-rx_buffer=%d\n", loc2-rx_buffer);
+                DEBUG_PRINT("strlen(rx_buffer) - (loc2-rx_buffer)=%d\n", strlen(rx_buffer) - (loc2-rx_buffer));
+                memset(ssid,0,sizeof(ssid));
+                memcpy(ssid,loc1 + 1, loc2-loc1 - 1);
+                memset(psk,0,sizeof(psk));
+                memcpy(psk,loc2 + 1, strlen(rx_buffer) - (loc2-rx_buffer) - 1);
+
+                DEBUG_PRINT("ssid=%s\n", ssid);
+                DEBUG_PRINT("psk=%s\n", psk);
+
+                int status = connect_to_wifi(ssid,psk);
+                switch (status) {
+                  case 0:
+                    write_with_debug(uart0_filestream, "Connected with internet\r", strlen("Connected with internet\r"));
+                    break;
+                  case 1:
+                    write_with_debug(uart0_filestream, "Connected no internet\r", strlen("Connected no internet\r"));
+                    break;
+                  default:
+                    write_with_debug(uart0_filestream, "Credentials error\r", strlen("Credentials error\r"));
+                    break;
+                }
+
+            }
           }
 
-					index = 0;
-					memset(rx_buffer, 0, sizeof(rx_buffer));
-				}
+
+        }
+
+				index = 0;
+				memset(rx_buffer, 0, sizeof(rx_buffer));
 			}
 		}
 	}
 
-	return 0;
 }
