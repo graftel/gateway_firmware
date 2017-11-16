@@ -26,6 +26,29 @@
 #define MAX_HTTP_RESPONSE_SIZE 65535
 
 
+#define MAX_RS485_ADDR_LEN 6
+
+#define BLE_DATA_CH_POS 0
+#define BLE_DATA_LEN_POS 1
+#define BLE_DATA_API_POS 2
+#define BLE_DATA_CMD_POS 3
+#define BLE_DATA_ADDR_POS 4
+
+#define RS485_CHANNEL_HEX 0x02
+
+
+#define READ_TEMP_HEX 0x01
+#define READ_COEF_HEX 0x02
+#define READ_CAL_HEX 0x03
+#define WRITE_CAL_HEX 0x04
+#define WRITE_ENABLE_HEX 0x05
+
+#define READ_TEMP_LEN 11
+#define READ_COEF_LEN 11
+#define READ_CAL_LEN  11
+#define WRITE_CAL_LEN 15
+#define WRITE_ENABLE_LEN 10
+
 #define     AWS_REGION             "us-east-1"                                   // The region where your dynamo DB table lives.
                                                                                  // Copy the _exact_ region value from this table: http://docs.aws.amazon.com/general/latest/gr/rande.html#ddb_region
 #define     AWS_HOST               "dynamodb.us-east-1.amazonaws.com"            // The endpoint host for where your dynamo DB table lives.
@@ -48,12 +71,14 @@
 //#define     DATE                   "20160824"
 #define  	INTERNET_CHECK_HOST    "www.google.com"
 
-#define DEBUG 3
+#define DEBUG 2
 #define DEFAULT_ERR_VALUE 999.0F
 
 #if defined(DEBUG) && DEBUG == 1
  #define DEBUG_PRINT(fmt, args...) fprintf(stderr, "DEBUG: %s:%d:%s(): " fmt, \
     __FILE__, __LINE__, __func__, ##args)
+ #define DEBUG_PRINT3(fmt, args...) fprintf(stderr, fmt, ## args)
+ #define DEBUG_PRINT4(fmt, args...) fprintf(stderr, fmt, ## args)
 #elif defined(DEBUG) && DEBUG == 2
 	#define DEBUG_PRINT(fmt, args...) fprintf(stderr, fmt, ## args)
   #define DEBUG_PRINT3(fmt, args...) fprintf(stderr, fmt, ## args)

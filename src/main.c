@@ -2,11 +2,11 @@
 #include <defines.h>
 #include <utilities.h>
 #include <ble_data_acq.h>
-#include <dynamodb_utilities.h>
+#include <data_handler.h>
 #include <localdb_utilities.h>
 
 int start_time,current_time; // test
-int interval = 60; // seconds
+int interval = 10; // seconds
 int status = 0;
 int i = 0, j;
 static bridge bridge_data;

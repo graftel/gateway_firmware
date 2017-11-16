@@ -3,27 +3,9 @@
 #include <temp_probe_RS485_tsys01.h>
 #include <utilities.h>
 
-#define MAX_RS485_ADDR_LEN 6
-
-#define BLE_DATA_CH_POS 0
-#define BLE_DATA_LEN_POS 1
-#define BLE_DATA_CMD_POS 2
-#define BLE_DATA_ADDR_POS 3
-
-#define RS485_CHANNEL_HEX 0x03
 
 
-#define READ_TEMP_HEX 0x01
-#define READ_COEF_HEX 0x02
-#define READ_CAL_HEX 0x03
-#define WRITE_CAL_HEX 0x04
-#define WRITE_ENABLE_HEX 0x05
-
-#define READ_TEMP_LEN 10
-#define READ_COEF_LEN 11
-#define READ_CAL_LEN  11
-#define WRITE_CAL_LEN 15
-#define WRITE_ENABLE_LEN 10
+uint8_t api_id = 0;
 
 int get_ble_cmd_temp_probe_RS485_tsys01(sensor *sen, char *ble_cmd, int *len)
 {
@@ -31,6 +13,7 @@ int get_ble_cmd_temp_probe_RS485_tsys01(sensor *sen, char *ble_cmd, int *len)
 	(*len) = READ_TEMP_LEN;
 	ble_cmd[BLE_DATA_CH_POS] = RS485_CHANNEL_HEX;
 	ble_cmd[BLE_DATA_LEN_POS] = READ_TEMP_LEN - 2;
+	ble_cmd[BLE_DATA_API_POS] = api_id;
 	ble_cmd[BLE_DATA_CMD_POS] = READ_TEMP_HEX;
 	memcpy(ble_cmd + BLE_DATA_ADDR_POS, sen->addr, MAX_RS485_ADDR_LEN);
 	ble_cmd[READ_TEMP_LEN - 1] = cal_checksum((uint8_t*)ble_cmd, READ_TEMP_LEN - 1);
@@ -42,10 +25,10 @@ data_code_def process_ble_resp_temp_probe_RS485_tsys01(sensor *sen, char *ble_re
 {
     float temp_value;
 
-    if (ble_resp[2] == 0x41)
+    if (ble_resp[BLE_DATA_CMD_POS] == 0x41 && ble_resp[BLE_DATA_API_POS] == api_id)
     {
         DEBUG_PRINT("read ok\n");
-        memcpy(&temp_value, ble_resp + 9, sizeof(float));
+        memcpy(&temp_value, ble_resp + BLE_DATA_ADDR_POS + MAX_RS485_ADDR_LEN, sizeof(float));
         DEBUG_PRINT3("temp_reading=%f\n",temp_value);
 
         sen->data = temp_value;
@@ -54,6 +37,13 @@ data_code_def process_ble_resp_temp_probe_RS485_tsys01(sensor *sen, char *ble_re
           DEBUG_PRINT("read error, no response read sensor in RS485\n");
           return RS485_TSYS01_NO_RESPONSE;
     }
+
+		api_id++;
+
+		if (api_id >= 0xff)
+		{
+			api_id = 0;
+		}
 
     return OK;
 }

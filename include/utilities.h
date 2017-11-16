@@ -20,7 +20,6 @@
 #include <string.h>
 #include <unistd.h>
 #include <glib.h>
-#include <dynamodb_utilities.h>
 
 #define CONFIG_FILE_PATH "/etc/hxmonitor/config.json"
 #define CONFIG_FOLDER_PATH "/etc/hxmonitor/"

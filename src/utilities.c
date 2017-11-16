@@ -57,15 +57,17 @@ uint8_t hex2char(uint8_t data_in, char *out)
 
 uint8_t cal_checksum(uint8_t *value, uint8_t len)
 {
-	uint8_t i = 0;
+	uint8_t i;
 	int checksum = 0;
 
-	for(i = 0; i < len; i++)
+	for(i = BLE_DATA_API_POS; i < len; i++)
 	{
 		checksum += value[i];
 	}
 
 	checksum &= 0xff;
+
+	checksum = 0xff - checksum;
 
 	return (uint8_t)checksum;
 }
@@ -179,7 +181,7 @@ int get_eth0_mac_addr(char *mac_addr)
 
 	return 0;
 }
-
+/*
 int update_config_file(bridge *bridge_data){
 	int i = 0, j = 0;
 	char payload[MAX_HTTP_REQUEST_SIZE];
@@ -324,7 +326,7 @@ int update_sensors(int cm_index, bridge *bridge_data)
 
 	json_object * jparse_obj = json_tokener_parse(json_start);
 
-	json_object_object_foreach(jparse_obj, key, val) { /*Passing through every array element*/
+	json_object_object_foreach(jparse_obj, key, val) {
 			if (strcmp(key, "Count") == 0)
 			{
 				json_object * jcount = val;
@@ -370,6 +372,7 @@ int update_sensors(int cm_index, bridge *bridge_data)
 
 	return 0;
 }
+
 
 int update_core_module(const char *gateway_addr, bridge *bridge_data)
 {
@@ -452,7 +455,7 @@ int update_core_module(const char *gateway_addr, bridge *bridge_data)
 
 	json_object * jparse_obj = json_tokener_parse(json_start);
 
-	json_object_object_foreach(jparse_obj, key, val) { /*Passing through every array element*/
+	json_object_object_foreach(jparse_obj, key, val) {
 			if (strcmp(key, "Count") == 0)
 			{
 				json_object * jcount = val;
@@ -601,7 +604,7 @@ int load_remote_config(bridge *bridge_data)
 
 	json_object * jparse_obj = json_tokener_parse(json_start);
 
-	json_object_object_foreach(jparse_obj, key, val) { /*Passing through every array element*/
+	json_object_object_foreach(jparse_obj, key, val) {
 			if (strcmp(key, "Count") == 0)
 			{
 				json_object * jcount = val;
@@ -660,7 +663,7 @@ int load_remote_config(bridge *bridge_data)
 
 	return 0;
 }
-
+*/
 int load_local_config(bridge *bridge_data)
 {
 	int i,j;
@@ -819,7 +822,7 @@ int init_data(bridge *bridge_data)
 			printf("cannot load local file\n");
 			return 1;
 		}
-		else
+/*		else
 		{
 				if (check_internet() == 0)  // always check the latest configuration file first
 				{
@@ -827,7 +830,7 @@ int init_data(bridge *bridge_data)
 						printf("cannot load remote config file\n");
 					}
 				}
-		}
+		}*/
 	}
 
 	return 0;

@@ -181,7 +181,7 @@
 
 
 #define RETRY_TIMES 5
-#define FAST_RETRY_TIMES 100
+#define FAST_RETRY_TIMES 5
 #define BLE_TIME_OUT	10
 #define ERROR_DATA_VALUE 999.0
 

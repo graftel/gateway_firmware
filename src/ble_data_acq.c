@@ -328,7 +328,7 @@ data_code_def send_ble_cmd_with_response(char *cmd, int cmd_len, char *resp, int
 		}
 
 		// verify send data and resp data
-		if (memcmp(cmd + 3, int_rdata + 4, MAX_SENSOR_ADDR) == 0
+		if (memcmp(cmd + BLE_DATA_ADDR_POS, int_rdata + BLE_DATA_ADDR_POS + 1, MAX_SENSOR_ADDR) == 0
 			&& int_rdata[0] == 0x0b)
 		{
 			DEBUG_PRINT("Address verified\n");
