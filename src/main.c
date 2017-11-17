@@ -6,7 +6,7 @@
 #include <localdb_utilities.h>
 
 int start_time,current_time; // test
-int interval = 10; // seconds
+int interval = 20; // seconds
 int status = 0;
 int i = 0, j;
 static bridge bridge_data;

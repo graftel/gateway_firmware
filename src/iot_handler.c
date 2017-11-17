@@ -4,16 +4,18 @@ char pubCertDirectory[PATH_MAX + 1] = "/etc/ssl/certs";
 char priCertDirectory[PATH_MAX + 1] = "/etc/ssl/private";
 
 char HostAddress[255] = AWS_IOT_MQTT_HOST;
-
+char rootCA[PATH_MAX + 1];
+char clientCRT[PATH_MAX + 1];
+char clientKey[PATH_MAX + 1];
 uint32_t port = AWS_IOT_MQTT_PORT;
 int iot_init_status = 0;
 
 char cPayload[100];
 char cTopic[256];
-AWS_IoT_Client client;
-IoT_Client_Init_Params mqttInitParams;
-IoT_Client_Connect_Params connectParams;
-IoT_Publish_Message_Params paramsQOS1;
+static AWS_IoT_Client client;
+static IoT_Client_Init_Params mqttInitParams;
+static IoT_Client_Connect_Params connectParams;
+static IoT_Publish_Message_Params paramsQOS1;
 
 
 
@@ -52,11 +54,6 @@ int init_iot()
 {
     if (iot_init_status == 0)
     {
-      char rootCA[PATH_MAX + 1];
-      char clientCRT[PATH_MAX + 1];
-      char clientKey[PATH_MAX + 1];
-
-
 
       IoT_Error_t rc = FAILURE;
 
@@ -133,17 +130,23 @@ int publish_data_to_iot_hub(data_set_def *data_set)
       return rc;
   }
 
+	while (aws_iot_mqtt_yield(&client, 100) == NETWORK_ATTEMPTING_RECONNECT){};
+
   sprintf(cPayload, "{\"Time_Stamp\" : %d , \"Device_ID\" : \"%s\", \"Data\" : %f , \"Data_Code\" : %d}", data_set->timestamp, data_set->id, data_set->data, data_set->data_code);
 
   printf("cPayload=%s\n", cPayload);
+
 
   paramsQOS1.payloadLen = strlen(cPayload);
 
   rc = aws_iot_mqtt_publish(&client, cTopic, strlen(cTopic), &paramsQOS1);
   if (rc == MQTT_REQUEST_TIMEOUT_ERROR) {
     IOT_WARN("QOS1 publish ack not received.\n");
-    rc = SUCCESS;
-  }
+	}
+	else{
+		rc = SUCCESS;
+	}
+
 
   if(SUCCESS != rc) {
     IOT_ERROR("An error occurred in the loop.\n");
