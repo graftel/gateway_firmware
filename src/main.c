@@ -4,14 +4,15 @@
 #include <ble_data_acq.h>
 #include <data_handler.h>
 #include <localdb_utilities.h>
+#include <iot_handler.h>
 
 int start_time,current_time; // test
-int interval = 20; // seconds
+int interval = 60; // seconds
 int status = 0;
 int i = 0, j;
 static bridge bridge_data;
 //static int running_cycle = 0;
-GThread *thread_localdb, *sync_db;
+GThread *thread_localdb, *sync_db, *thread_iot;
 
 int rc;
 GError  *err1 = NULL;
@@ -22,7 +23,7 @@ gboolean timeout_callback(gpointer data)
 		current_time = time(NULL);
    //MCP79410_Read_Epoch_Time(&current_time);
 
-    if ((current_time - start_time) % interval == 0)
+    if ((current_time - start_time) % bridge_data.daq_interval == 0)
     {
 				//start collecting data based on config file
 
@@ -123,10 +124,23 @@ int main()
 
 	MCP79410_Setup_Date(curSec,curMin,curHour,curDayofweek,is12,curDay,curMonth,curYear); */
     GMainLoop *loop;
+		g_print("Start\n");
 	if (init_data(&bridge_data) == 1)
 	{
 		g_print("init failed\n");
 		return -1;
+	}
+	interval = bridge_data.daq_interval;
+	if (check_internet() == 0)
+	{
+		if (init_iot(&bridge_data) != SUCCESS)
+		{
+			g_print("IOT Init Fail\n");
+		}
+		else
+		{
+			thread_iot = g_thread_try_new("IOT_HANDLE",(GThreadFunc)device_shadow_handler, (gpointer)&bridge_data, &err2);
+		}
 	}
 	// Start Getting Sensor Definitions
 	//get_sensor_defs(&bridge_data);

@@ -7,6 +7,7 @@ char buffer[50];
 
 int write_sqlite_hx_data(data_set_def *data_set)
 {
+   // set external lock 
    sqlite3 *db;
    char *err_msg = 0;
    int rc;

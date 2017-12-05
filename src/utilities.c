@@ -181,20 +181,22 @@ int get_eth0_mac_addr(char *mac_addr)
 
 	return 0;
 }
-/*
+
 int update_config_file(bridge *bridge_data){
 	int i = 0, j = 0;
 	char payload[MAX_HTTP_REQUEST_SIZE];
 
 	json_object *jobj_root = json_object_new_object();
-	json_object *jvalue1 = json_object_new_string(bridge_data->aws_access_key);
-	json_object_object_add(jobj_root,"AWS_ACCESS_KEY",jvalue1);
-
-	json_object *jvalue2 = json_object_new_string(bridge_data->aws_secret_access_key);
-	json_object_object_add(jobj_root,"AWS_SECRET_ACCESS_KEY",jvalue2);
 
 	json_object *jvalue3 = json_object_new_string(bridge_data->addr);
-	json_object_object_add(jobj_root,"DeviceID",jvalue3);
+	json_object_object_add(jobj_root,CONFIG_DEVICE_ID,jvalue3);
+
+	json_object *jvalue5 = json_object_new_int(bridge_data->daq_interval);
+	json_object_object_add(jobj_root,CONFIG_DAQ_INTERVAL,jvalue5);
+
+	json_object *jvalue4 = json_object_new_int(bridge_data->config_version);
+	json_object_object_add(jobj_root,CONFIG_VERSION,jvalue4);
+
 
 	json_object *jarr1 = json_object_new_array();
 
@@ -203,13 +205,13 @@ int update_config_file(bridge *bridge_data){
 			json_object *jcm = json_object_new_object();
 
 			json_object *jcm_value1 = json_object_new_string(bridge_data->cm[i].addr);
-			json_object_object_add(jcm,"DeviceID",jcm_value1);
+			json_object_object_add(jcm,CONFIG_DEVICE_ID,jcm_value1);
 
 			json_object *jcm_value2 = json_object_new_string(bridge_data->cm[i].ble_addr);
-			json_object_object_add(jcm,"Bluetooth_Address",jcm_value2);
+			json_object_object_add(jcm,CONFIG_BLE_ADDRESS,jcm_value2);
 
 			json_object *jcm_value3 = json_object_new_string(bridge_data->cm[i].protocol);
-			json_object_object_add(jcm,"Protocol",jcm_value3);
+			json_object_object_add(jcm,CONFIG_PROTOCOL,jcm_value3);
 
 			json_object *jsen_arr = json_object_new_array();
 
@@ -218,15 +220,14 @@ int update_config_file(bridge *bridge_data){
 					json_object *jsen_addr = json_object_new_string(bridge_data->cm[i].sen[j].addr);
 					json_object_array_add(jsen_arr, jsen_addr);
 			}
-			json_object_object_add(jcm,"Sensors",jsen_arr);
+			json_object_object_add(jcm,CONFIG_SENSORS,jsen_arr);
 
 			json_object_array_add(jarr1, jcm);
 	}
 
-	json_object_object_add(jobj_root,"CoreModules",jarr1);
+	json_object_object_add(jobj_root,CONFIG_CORE_MODULES,jarr1);
 
-	json_object *jvalue4 = json_object_new_double(bridge_data->config_version);
-	json_object_object_add(jobj_root,"ConfigVersion",jvalue4);
+
 
 	sprintf(payload, "%s",json_object_to_json_string_ext(jobj_root, JSON_C_TO_STRING_PRETTY));
 
@@ -258,7 +259,7 @@ int update_config_file(bridge *bridge_data){
 	fclose(file);
 	return 0;
 }
-
+/*
 int update_sensors(int cm_index, bridge *bridge_data)
 {
 	int i;
@@ -664,9 +665,116 @@ int load_remote_config(bridge *bridge_data)
 	return 0;
 }
 */
+
+int update_module(bridge *bridge_data, const char *inputJsonString, uint32_t strLen)
+{
+		int i,j;
+		json_object * jobj = json_tokener_parse(inputJsonString);
+
+		DEBUG_PRINT("start updating module=%s\n",inputJsonString);
+		json_object_object_foreach(jobj, key, val) {
+			if (strcmp(key, CONFIG_DEVICE_ID) == 0)
+			{
+				memset(bridge_data->addr,0,sizeof(bridge_data->addr));
+				g_stpcpy(bridge_data->addr, json_object_get_string(val));
+			}
+			else if (strcmp(key, CONFIG_VERSION) == 0)
+			{
+				bridge_data->config_version = json_object_get_int(val);
+			}
+			else if (strcmp(key, CONFIG_DAQ_INTERVAL) == 0)
+			{
+				bridge_data->daq_interval = json_object_get_int(val);
+			}
+			else if (strcmp(key, CONFIG_CORE_MODULES) == 0)
+			{
+				if (bridge_data->size_cm != 0)
+				{
+					for(i = 0; i < bridge_data->size_cm; i++)
+					{
+						g_free(bridge_data->cm[i].sen);
+					}
+
+					g_free(bridge_data->cm);
+				}
+
+				json_object * jitems = val;
+				json_object * jitem = NULL;
+				bridge_data->size_cm = json_object_array_length(jitems);
+				bridge_data->index_cm = 0;
+				bridge_data->cm = g_try_new0(core_module, bridge_data->size_cm);
+				for(i = 0; i < bridge_data->size_cm; i++)
+				{
+						jitem =  json_object_array_get_idx(jitems, i);
+						json_object *jble_addr_value, *jaddr_value, *jsensors;
+						if (json_object_object_get_ex(jitem,"Bluetooth_Address", &jble_addr_value))
+						{
+							memset(bridge_data->cm[i].ble_addr,0,sizeof(bridge_data->cm[i].ble_addr));
+							g_stpcpy(bridge_data->cm[i].ble_addr, json_object_get_string(jble_addr_value));
+						}
+
+						if (json_object_object_get_ex(jitem,"DeviceID", &jaddr_value))
+						{
+							memset(bridge_data->cm[i].addr,0,sizeof(bridge_data->cm[i].addr));
+							g_stpcpy(bridge_data->cm[i].addr, json_object_get_string(jaddr_value));
+						}
+
+						if (json_object_object_get_ex(jitem,"Protocol", &jaddr_value))
+						{
+							strcpy(bridge_data->cm[i].protocol, json_object_get_string(jaddr_value));
+						}
+
+						if (json_object_object_get_ex(jitem,"Sensors", &jsensors))
+						{
+							json_object * jsensor = NULL;
+							bridge_data->cm[i].size_sen = json_object_array_length(jsensors);
+							bridge_data->cm[i].index_sen = 0;
+							bridge_data->cm[i].discovered = 0;
+							bridge_data->cm[i].sen = g_try_new0(sensor, bridge_data->cm[i].size_sen);
+
+							for(j = 0; j < bridge_data->cm[i].size_sen; j++)
+							{
+								jsensor = json_object_array_get_idx(jsensors,j);
+								memset(bridge_data->cm[i].sen[j].addr, 0, sizeof(bridge_data->cm[i].sen[j].addr));
+								g_stpcpy(bridge_data->cm[i].sen[j].addr, json_object_get_string(jsensor));
+							}
+						}
+				}
+
+			}
+		}
+
+
+	json_object_put(jobj);
+	DEBUG_PRINT("bridge_data->addr=%s\n",bridge_data->addr);
+
+	DEBUG_PRINT("bridge_data->config_version=%d\n",bridge_data->config_version);
+
+	DEBUG_PRINT("bridge_data->daq_interval=%d\n",bridge_data->daq_interval);
+
+	DEBUG_PRINT("number of core_modules=%d\n", bridge_data->size_cm);
+
+	for(i = 0; i < bridge_data->size_cm; i++)
+	{
+
+		DEBUG_PRINT("Core Moudle #%d \n", i);
+		DEBUG_PRINT("    DeviceID=%s\n",bridge_data->cm[i].addr);
+		DEBUG_PRINT("    BLE_ADDR=%s\n",bridge_data->cm[i].ble_addr);
+
+		for(j = 0; j < bridge_data->cm[i].size_sen; j++)
+		{
+			DEBUG_PRINT("         Sen_addr=%s\n",bridge_data->cm[i].sen[j].addr);
+		}
+
+	}
+
+
+	return 0;
+
+}
+
 int load_local_config(bridge *bridge_data)
 {
-	int i,j;
 	FILE *fp;
 	long lSize;
 	char *buffer;
@@ -694,106 +802,10 @@ int load_local_config(bridge *bridge_data)
 	  return 1;
 	}
 	/* do your work here, buffer is a string contains the whole text */
-
-	json_object * jobj = json_tokener_parse(buffer);
-
-	json_object_object_foreach(jobj, key, val) {
-		if (strcmp(key, "DeviceID") == 0)
-		{
-			memset(bridge_data->addr,0,sizeof(bridge_data->addr));
-			g_stpcpy(bridge_data->addr, json_object_get_string(val));
-		}
-		else if (strcmp(key, "CoreModules") == 0)
-		{
-			json_object * jitems = val;
-			json_object * jitem = NULL;
-			bridge_data->size_cm = json_object_array_length(jitems);
-			bridge_data->index_cm = 0;
-			bridge_data->cm = g_try_new0(core_module, bridge_data->size_cm);
-
-			for(i = 0; i < bridge_data->size_cm; i++)
-			{
-					jitem =  json_object_array_get_idx(jitems, i);
-					json_object *jble_addr_value, *jaddr_value, *jsensors;
-					if (json_object_object_get_ex(jitem,"Bluetooth_Address", &jble_addr_value))
-					{
-						memset(bridge_data->cm[i].ble_addr,0,sizeof(bridge_data->cm[i].ble_addr));
-						g_stpcpy(bridge_data->cm[i].ble_addr, json_object_get_string(jble_addr_value));
-					}
-
-					if (json_object_object_get_ex(jitem,"DeviceID", &jaddr_value))
-					{
-						memset(bridge_data->cm[i].addr,0,sizeof(bridge_data->cm[i].addr));
-						g_stpcpy(bridge_data->cm[i].addr, json_object_get_string(jaddr_value));
-					}
-
-					if (json_object_object_get_ex(jitem,"Protocol", &jaddr_value))
-					{
-						strcpy(bridge_data->cm[i].protocol, json_object_get_string(jaddr_value));
-					}
-
-					if (json_object_object_get_ex(jitem,"Sensors", &jsensors))
-					{
-						json_object * jsensor = NULL;
-						bridge_data->cm[i].size_sen = json_object_array_length(jsensors);
-						bridge_data->cm[i].index_sen = 0;
-						bridge_data->cm[i].discovered = 0;
-						bridge_data->cm[i].sen = g_try_new0(sensor, bridge_data->cm[i].size_sen);
-
-						for(j = 0; j < bridge_data->cm[i].size_sen; j++)
-						{
-							jsensor = json_object_array_get_idx(jsensors,j);
-							memset(bridge_data->cm[i].sen[j].addr, 0, sizeof(bridge_data->cm[i].sen[j].addr));
-							g_stpcpy(bridge_data->cm[i].sen[j].addr, json_object_get_string(jsensor));
-						}
-						json_object_put(jsensor);
-					}
-
-					json_object_put(jble_addr_value);
-					json_object_put(jaddr_value);
-					json_object_put(jsensors);
-			}
-
-			json_object_put(jitems);
-			json_object_put(jitem);
-		}
-		else if (strcmp(key, "AWS_ACCESS_KEY") == 0)
-		{
-			memset(bridge_data->aws_access_key,0,sizeof(bridge_data->aws_access_key));
-			g_stpcpy(bridge_data->aws_access_key, json_object_get_string(val));
-		}
-		else if (strcmp(key, "AWS_SECRET_ACCESS_KEY") == 0)
-		{
-			memset(bridge_data->aws_secret_access_key,0,sizeof(bridge_data->aws_secret_access_key));
-			g_stpcpy(bridge_data->aws_secret_access_key, json_object_get_string(val));
-		}
-		else if (strcmp(key, "ConfigVersion") == 0)
-		{
-			bridge_data->config_version = json_object_get_double(val);
-		}
-
-	}
-
-
-json_object_put(jobj);
-
-
-
-DEBUG_PRINT("number of core_modules=%d\n", bridge_data->size_cm);
-
-for(i = 0; i < bridge_data->size_cm; i++)
-{
-
-	DEBUG_PRINT("Core Moudle #%d \n", i);
-	DEBUG_PRINT("    DeviceID=%s\n",bridge_data->cm[i].addr);
-	DEBUG_PRINT("    BLE_ADDR=%s\n",bridge_data->cm[i].ble_addr);
-
-	for(j = 0; j < bridge_data->cm[i].size_sen; j++)
+	if (update_module(bridge_data, buffer, strlen(buffer)) != 0)
 	{
-		DEBUG_PRINT("         Sen_addr=%s\n",bridge_data->cm[i].sen[j].addr);
+		printf("update module failed\n");
 	}
-
-}
 
 	fclose(fp);
 	free(buffer);
@@ -810,14 +822,16 @@ int init_data(bridge *bridge_data)
 
 	bridge_data->data_queue = g_async_queue_new();
 
-
+	DEBUG_PRINT("bp1\n");
 	if (file_exists(CONFIG_FILE_PATH) == 0)
 	{
+		DEBUG_PRINT("bp2\n");
 		printf("Error, cannot locate config file\n");
 		return 1;
 	}
 	else
 	{
+		DEBUG_PRINT("bp3\n");
 		if (load_local_config(bridge_data) != 0){
 			printf("cannot load local file\n");
 			return 1;

@@ -46,4 +46,8 @@ int init_data(bridge *bridge_data);
 
 int free_defs(bridge *data);
 
+int update_module(bridge *bridge_data, const char *inputJsonString, uint32_t strLen);
+
+int update_config_file(bridge *bridge_data);
+
 #endif

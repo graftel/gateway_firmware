@@ -17,6 +17,8 @@
 #include <bluetooth/hci_lib.h>
 
 #include <temp_probe_RS485_tsys01.h>
+#include <temp_probe_12ch_10k.h>
+
 #include <ble_data_acq.h>
 
 int sock;
@@ -328,7 +330,7 @@ data_code_def send_ble_cmd_with_response(char *cmd, int cmd_len, char *resp, int
 		}
 
 		// verify send data and resp data
-		if (memcmp(cmd + BLE_DATA_ADDR_POS, int_rdata + BLE_DATA_ADDR_POS + 1, MAX_SENSOR_ADDR) == 0
+		if (memcmp(cmd + BLE_DATA_ADDR_POS, int_rdata + BLE_DATA_ADDR_POS + 1, ADDR_LEN_I2C_PROBE) == 0
 			&& int_rdata[0] == 0x0b)
 		{
 			DEBUG_PRINT("Address verified\n");
@@ -538,7 +540,28 @@ int ble_data_acq(core_module *cm)
 										}
 										else if (strncmp(cm->sen[i].addr,"03", 2) == 0)	// 12-CH 10K Probe
 										{
+												DEBUG_PRINT("detect 12-ch sensor\n");
+												sensor *sen = &cm->sen[i];
+												if(get_ble_cmd_12_ch(sen, ble_cmd, &ble_cmd_len) != 0)
+												{
+													 DEBUG_PRINT("cannot get ble command\n");
+													 goto FAIL;
+												}
 
+												cm->sen[i].data_code = send_ble_cmd_with_response(ble_cmd, ble_cmd_len, ble_resp, &ble_resp_len, cm);
+
+												if (cm->sen[i].data_code == OK)
+												{
+													cm->sen[i].data_code = process_ble_resp_12_ch(sen, ble_resp, ble_resp_len);
+												}
+
+												if (cm->sen[i].data_code != OK)
+												{
+													DEBUG_PRINT("data error\n");
+													cm->sen[i].data = ERROR_DATA_VALUE;
+												}
+
+												DEBUG_PRINT("data ok\n");
 
 										}
 										else																			// Unknown probe

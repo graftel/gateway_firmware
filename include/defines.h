@@ -11,7 +11,9 @@
 #define MAX_BLE_PACKET_LEN 40
 #define BRIDGE_SERIAL_NUM "04A001"
 #define ASSETID			  "GT_HX_170101"
-#define MAX_SENSOR_ADDR 6
+#define MAX_SENSOR_ADDR 7
+#define ADDR_LEN_I2C_PROBE 6
+#define ADDR_LEN_12_CH 7
 #define MAX_BLE_ADDR    20
 #define MAX_TSYS01_COEF_LEN  5
 #define MAX_TSYS01_DATA_LEN  3
@@ -25,7 +27,13 @@
 #define MAX_HTTP_REQUEST_SIZE 65535
 #define MAX_HTTP_RESPONSE_SIZE 65535
 
-
+#define CONFIG_DEVICE_ID 		"DeviceID"
+#define CONFIG_CORE_MODULES 	"CoreModules"
+#define CONFIG_BLE_ADDRESS 		"Bluetooth_Address"
+#define CONFIG_PROTOCOL	   		"Protocol"
+#define CONFIG_SENSORS	   		"Sensors"
+#define CONFIG_VERSION			"ConfigVersion"
+#define CONFIG_DAQ_INTERVAL "DAQInterval"
 #define MAX_RS485_ADDR_LEN 6
 
 #define BLE_DATA_CH_POS 0
@@ -34,8 +42,8 @@
 #define BLE_DATA_CMD_POS 3
 #define BLE_DATA_ADDR_POS 4
 
-#define RS485_CHANNEL_HEX 0x02
-
+#define RS485_I2C_CHANNEL_HEX 0x02
+#define RS485_12_CH_CHANNEL_HEX 0x03
 
 #define READ_TEMP_HEX 0x01
 #define READ_COEF_HEX 0x02
@@ -49,26 +57,8 @@
 #define WRITE_CAL_LEN 15
 #define WRITE_ENABLE_LEN 10
 
-#define     AWS_REGION             "us-east-1"                                   // The region where your dynamo DB table lives.
-                                                                                 // Copy the _exact_ region value from this table: http://docs.aws.amazon.com/general/latest/gr/rande.html#ddb_region
-#define     AWS_HOST               "dynamodb.us-east-1.amazonaws.com"            // The endpoint host for where your dynamo DB table lives.
-                                                                                 // Copy the _exact_ endpoint host from this table: http://docs.aws.amazon.com/general/latest/gr/rande.html#ddb_region
-#define		AWS_PORT_NUM			80
+#define READ_12_CH_TEMP_LEN 12
 
-// Other sketch configuration
-#define     READING_DELAY_MINS     1      // Number of minutes to wait between readings.
-#define     TIMEOUT_MS             15000  // How long to wait (in milliseconds) for a server connection to respond (for both AWS and NTP calls).
-
-// Don't modify the below constants unless you want to play with calling other DynamoDB APIs
-#define     AWS_TARGET             "DynamoDB_20120810.GetItem"
-#define		AWS_BATCH_WRITE_ITEM   "DynamoDB_20120810.BatchWriteItem"
-#define     AWS_SERVICE            "dynamodb"
-//#define     AWS_SIG_START          "AWS4" AWS_SECRET_ACCESS_KEY
-#define     AWS_SIG_START          "AWS4"
-#define     SHA256_HASH_LENGTH     32
-#define 	AWS_4_REGUEST		   "aws4_request"
-//#define     DATE_TIME			   "20160824T152700Z"
-//#define     DATE                   "20160824"
 #define  	INTERNET_CHECK_HOST    "www.google.com"
 
 #define DEBUG 2
@@ -207,9 +197,6 @@ typedef struct
 	char			local_db_addr[MAX_IP_ADDR];
 	int				local_db_port;
 	int 			current_timestamp;
-
-	char			aws_access_key[MAX_SECRET_LEN];
-	char		  aws_secret_access_key[MAX_SECRET_LEN];
 	//Sensors:
 	core_module  	*cm;
   GAsyncQueue    *data_queue;
@@ -218,8 +205,8 @@ typedef struct
 
 	int				err_list[MAX_ERROR_MSG];
 	int				size_err;
-
-  double    config_version;
+  int     daq_interval;         // seconds
+	int    config_version;
 } bridge;
 
 
