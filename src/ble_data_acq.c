@@ -281,7 +281,7 @@ data_code_def send_ble_cmd_with_response(char *cmd, int cmd_len, char *resp, int
 	// Write Char Request
 	if (write_ble_data(int_wdata, int_wcmd_len) != 0 )
 	{
-		err_no = BLE_WRITE_ERR;
+		err_no = PROTOCOL_BLE_WRITE_ERR;
 		goto FAIL;
 	}
 
@@ -290,14 +290,14 @@ data_code_def send_ble_cmd_with_response(char *cmd, int cmd_len, char *resp, int
 	if (read_ble_data(int_rdata, &int_rcmd_len) != 0 )
 	{
 		DEBUG_PRINT("read_error_1\n");
-		err_no = BLE_READ_ERR;
+		err_no = PROTOCOL_BLE_READ_ERR;
 		goto FAIL;
 	}
 
 	if (!(int_rcmd_len == 1 && int_rdata[0] == 0x13))
 	{
 		DEBUG_PRINT("read_error_2\n");
-		err_no = BLE_READ_ERR;
+		err_no = PROTOCOL_BLE_READ_ERR;
 		goto FAIL;
 	}
 
@@ -316,7 +316,7 @@ data_code_def send_ble_cmd_with_response(char *cmd, int cmd_len, char *resp, int
 
 		if (write_ble_data(int_wdata, int_wcmd_len) != 0 )
 		{
-			err_no = BLE_WRITE_ERR;
+			err_no = PROTOCOL_BLE_WRITE_ERR;
 			goto FAIL;
 		}
 
@@ -325,7 +325,7 @@ data_code_def send_ble_cmd_with_response(char *cmd, int cmd_len, char *resp, int
 		if (read_ble_data(int_rdata, &int_rcmd_len) != 0 )
 		{
 
-			err_no = BLE_READ_ERR;
+			err_no = PROTOCOL_BLE_READ_ERR;
 			goto FAIL;
 		}
 
@@ -345,7 +345,7 @@ data_code_def send_ble_cmd_with_response(char *cmd, int cmd_len, char *resp, int
 	{
 
 		DEBUG_PRINT("no response or address not match, retry out\n");
-		err_no = BLE_INTERNAL_CMD_NO_RESPONSE;
+		err_no = PROTOCOL_BLE_INTERNAL_CMD_NO_RESPONSE;
 		goto FAIL;
 	}
 	else
@@ -406,7 +406,7 @@ data_code_def dicover_char(core_module *cm) // search handle from 0x0001 to 0xff
 
 		if (write_ble_data((char*)buf, plen) != 0 )
 		{
-			err_no = BLE_WRITE_ERR;
+			err_no = PROTOCOL_BLE_WRITE_ERR;
 			goto FAIL;
 		}
 
@@ -414,7 +414,7 @@ data_code_def dicover_char(core_module *cm) // search handle from 0x0001 to 0xff
 		if (read_ble_data((char*)read_buf, &rlen) != 0 )
 		{
 			DEBUG_PRINT("read_error_1\n");
-			err_no = BLE_READ_ERR;
+			err_no = PROTOCOL_BLE_READ_ERR;
 			goto FAIL;
 		}
 
@@ -465,7 +465,7 @@ data_code_def dicover_char(core_module *cm) // search handle from 0x0001 to 0xff
 			else
 			{
 				DEBUG_PRINT("Unknown cmd\n");
-				err_no = BLE_READ_ERR;
+				err_no = PROTOCOL_BLE_READ_ERR;
 				goto FAIL;
 			}
 
@@ -474,7 +474,7 @@ data_code_def dicover_char(core_module *cm) // search handle from 0x0001 to 0xff
 		else
 		{
 			DEBUG_PRINT("Read error cmd\n");
-			err_no = BLE_READ_ERR;
+			err_no = PROTOCOL_BLE_READ_ERR;
 			goto FAIL;
 		}
 
@@ -560,14 +560,42 @@ int ble_data_acq(core_module *cm)
 													DEBUG_PRINT("data error\n");
 													cm->sen[i].data = ERROR_DATA_VALUE;
 												}
+												else{
+														DEBUG_PRINT("data ok\n");
+												}
 
-												DEBUG_PRINT("data ok\n");
+										}
+										else if (strncmp(cm->sen[i].addr,"05", 2) == 0)	// 12-CH 10K Probe
+										{
+												DEBUG_PRINT("detect dp sensor\n");
+												sensor *sen = &cm->sen[i];
+												if(get_ble_cmd_dp_sensor(sen, ble_cmd, &ble_cmd_len) != 0)
+												{
+													 DEBUG_PRINT("cannot get ble command\n");
+													 goto FAIL;
+												}
+
+												cm->sen[i].data_code = send_ble_cmd_with_response(ble_cmd, ble_cmd_len, ble_resp, &ble_resp_len, cm);
+
+												if (cm->sen[i].data_code == OK)
+												{
+													cm->sen[i].data_code = process_ble_resp_dp_sensor(sen, ble_resp, ble_resp_len);
+												}
+
+												if (cm->sen[i].data_code != OK)
+												{
+													DEBUG_PRINT("data error\n");
+													cm->sen[i].data = ERROR_DATA_VALUE;
+												}
+												else{
+														DEBUG_PRINT("data ok\n");
+												}
 
 										}
 										else																			// Unknown probe
 										{
 											cm->sen[i].data = ERROR_DATA_VALUE;
-											cm->sen[i].data_code = UNKNOWN_PROBE_DEFINITION;
+											cm->sen[i].data_code = SENSOR_GENERAL_UNKNOWN_DEFINITION;
 										}
 								}
 
@@ -581,7 +609,7 @@ int ble_data_acq(core_module *cm)
 				for (i = 0; i < cm->size_sen; i++)
 				{
 						cm->sen[i].data = ERROR_DATA_VALUE;
-						cm->sen[i].data_code = BLE_CONN_TIMEOUT;
+						cm->sen[i].data_code = PROTOCOL_BLE_CONN_TIMEOUT;
 				}
 				goto FAIL;
 		}

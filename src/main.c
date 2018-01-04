@@ -5,9 +5,10 @@
 #include <data_handler.h>
 #include <localdb_utilities.h>
 #include <iot_handler.h>
+#include <rs485_acq.h>
 
 int start_time,current_time; // test
-int interval = 60; // seconds
+int interval = 10; // seconds
 int status = 0;
 int i = 0, j;
 static bridge bridge_data;
@@ -37,10 +38,10 @@ gboolean timeout_callback(gpointer data)
 					{
             ble_data_acq(cur_cm);
 					}
-//					else if (cur_cm->protocol == CM_RS485)
-//					{
-
-//					}
+					else if (strstr(cur_cm->protocol, "RS485") != NULL)
+					{
+						acq_via_rs485(cur_cm);
+					}
 
 						for (j = 0; j < cur_cm->size_sen; j++)
 						{
@@ -58,15 +59,16 @@ gboolean timeout_callback(gpointer data)
 
 
 				}
+			}
 				// done acquire data, put data into queue
 
 
 				//thread_localdb = g_thread_try_new("LOCAL_DB_TH", (GThreadFunc)write_sqlite_hx_data_wrapper, (gpointer)&bridge_data, &err1);
 				// save all data to local db thread
-				if (err1 != NULL)
+	/*			if (err1 != NULL)
 				{
 					g_printerr("%s!\n",err1->message);
-				}
+				}*/
 /*
 		if (check_internet() != 0)
 		{
@@ -105,8 +107,6 @@ gboolean timeout_callback(gpointer data)
 
 		}
 		*/
-
-    }
 
     return TRUE;
 }
