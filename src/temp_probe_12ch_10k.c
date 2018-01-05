@@ -11,7 +11,7 @@ int get_ble_cmd_12_ch(sensor *sen, char *ble_cmd, int *len)
 {
 	// First Get temp Connected to the core module, get cmd based on proto
 	(*len) = READ_12_CH_TEMP_LEN;
-	ble_cmd[BLE_DATA_CH_POS] = RS485_12_CH_CHANNEL_HEX;
+	ble_cmd[BLE_DATA_CH_POS] = BLE_12_CH_HEADER;
 	ble_cmd[BLE_DATA_LEN_POS] = READ_12_CH_TEMP_LEN - 2;
 	ble_cmd[BLE_DATA_API_POS] = api_id_12_ch;
 	ble_cmd[BLE_DATA_CMD_POS] = READ_TEMP_HEX;

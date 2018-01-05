@@ -18,6 +18,7 @@
 
 #include <temp_probe_RS485_tsys01.h>
 #include <temp_probe_12ch_10k.h>
+#include <dp_sensor.h>
 
 #include <ble_data_acq.h>
 
@@ -268,43 +269,45 @@ data_code_def send_ble_cmd_with_response(char *cmd, int cmd_len, char *resp, int
 	}
 	DEBUG_PRINT("\n");
 
-	memset(int_wdata,0,sizeof(int_wdata));
 
-	int_wdata[0] = 0x12;
-	int_wdata[1] = cm->write_handle;
-	int_wdata[2] = 0x00;
-
-	int_wcmd_len = cmd_len + 3;
-
-	memcpy(int_wdata + 3, cmd, cmd_len);
-
-	// Write Char Request
-	if (write_ble_data(int_wdata, int_wcmd_len) != 0 )
-	{
-		err_no = PROTOCOL_BLE_WRITE_ERR;
-		goto FAIL;
-	}
-
-	//verify write success
-	memset(int_rdata,0,sizeof(int_rdata));
-	if (read_ble_data(int_rdata, &int_rcmd_len) != 0 )
-	{
-		DEBUG_PRINT("read_error_1\n");
-		err_no = PROTOCOL_BLE_READ_ERR;
-		goto FAIL;
-	}
-
-	if (!(int_rcmd_len == 1 && int_rdata[0] == 0x13))
-	{
-		DEBUG_PRINT("read_error_2\n");
-		err_no = PROTOCOL_BLE_READ_ERR;
-		goto FAIL;
-	}
 
 	while(retry > 0 && read_status == 0)
 	{
 		DEBUG_PRINT("enter while loop\n");
-		usleep(1000);
+
+		memset(int_wdata,0,sizeof(int_wdata));
+
+		int_wdata[0] = 0x12;
+		int_wdata[1] = cm->write_handle;
+		int_wdata[2] = 0x00;
+
+		int_wcmd_len = cmd_len + 3;
+
+		memcpy(int_wdata + 3, cmd, cmd_len);
+
+		// Write Char Request
+		if (write_ble_data(int_wdata, int_wcmd_len) != 0 )
+		{
+			err_no = PROTOCOL_BLE_WRITE_ERR;
+			goto FAIL;
+		}
+
+		//verify write success
+		memset(int_rdata,0,sizeof(int_rdata));
+		if (read_ble_data(int_rdata, &int_rcmd_len) != 0 )
+		{
+			DEBUG_PRINT("read_error_1\n");
+			err_no = PROTOCOL_BLE_READ_ERR;
+			goto FAIL;
+		}
+
+		if (!(int_rcmd_len == 1 && int_rdata[0] == 0x13))
+		{
+			DEBUG_PRINT("read_error_2\n");
+			err_no = PROTOCOL_BLE_READ_ERR;
+			goto FAIL;
+		}
+
 
 		memset(int_wdata,0,sizeof(int_wdata));
 
@@ -330,11 +333,23 @@ data_code_def send_ble_cmd_with_response(char *cmd, int cmd_len, char *resp, int
 		}
 
 		// verify send data and resp data
-		if (memcmp(cmd + BLE_DATA_ADDR_POS, int_rdata + BLE_DATA_ADDR_POS + 1, ADDR_LEN_I2C_PROBE) == 0
-			&& int_rdata[0] == 0x0b)
+		if (cmd[0] == BLE_TSYS01_HEADER || cmd[0] == BLE_12_CH_HEADER)
 		{
-			DEBUG_PRINT("Address verified\n");
-			read_status = 1;
+			if (memcmp(cmd + BLE_DATA_ADDR_POS, int_rdata + BLE_DATA_ADDR_POS + 1, ADDR_LEN_I2C_PROBE) == 0
+				&& int_rdata[0] == 0x0b
+				&& int_rdata[BLE_DATA_CMD_POS + 1] == cmd[BLE_DATA_CMD_POS] + BLE_CMD_RESP_ADDITION)
+			{
+				DEBUG_PRINT("Address verified\n");
+				read_status = 1;
+			}
+		}
+		else if (cmd[0] == BLE_DP_HEADER)
+		{
+			if (int_rdata[0] == 0x0b && cmd[BLE_DATA_ADDR_POS] == int_rdata[BLE_DATA_ADDR_POS + 1])
+			{
+				DEBUG_PRINT("Address verified\n");
+				read_status = 1;
+			}
 		}
 
 

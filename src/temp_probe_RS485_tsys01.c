@@ -11,7 +11,7 @@ int get_ble_cmd_temp_probe_RS485_tsys01(sensor *sen, char *ble_cmd, int *len)
 {
 	// First Get temp Connected to the core module, get cmd based on proto
 	(*len) = READ_TEMP_LEN;
-	ble_cmd[BLE_DATA_CH_POS] = RS485_I2C_CHANNEL_HEX;
+	ble_cmd[BLE_DATA_CH_POS] = BLE_TSYS01_HEADER;
 	ble_cmd[BLE_DATA_LEN_POS] = READ_TEMP_LEN - 2;
 	ble_cmd[BLE_DATA_API_POS] = api_id;
 	ble_cmd[BLE_DATA_CMD_POS] = READ_TEMP_HEX;

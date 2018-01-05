@@ -16,8 +16,6 @@
 #include <temp_probe_12ch_10k.h>
 #include <dp_sensor.h>
 
-#define RETRY_TIMES 5
-#define FAST_RETRY_TIMES 5
 #define ERROR_DATA_VALUE 999.0
 
 #define SENSOR_TEMP_TSYS01 "02"
